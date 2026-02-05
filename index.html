@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Portfolio Dashboard</title>
+  <meta name="description" content="Portfolio Dashboard — stock analysis tables with filters, passcode access, and live price updates." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <header class="topbar" role="banner">
+    <div class="topbar__inner">
+      <div class="title">
+        <div class="title__name">Portfolio Dashboard</div>
+        <div class="title__meta">
+          <span class="meta-pill" id="lockPill" aria-live="polite">Locked</span>
+          <span class="meta-dot">•</span>
+          <span class="meta-text" id="lastUpdated">Last updated: —</span>
+        </div>
+      </div>
+
+      <div class="access" role="region" aria-label="Access control">
+        <div class="access__label">Passcode</div>
+        <input id="passcode" class="input" type="password" autocomplete="off" placeholder="Enter passcode" aria-label="Passcode" />
+        <button id="btnUnlock" class="btn btn--primary">Unlock</button>
+        <button id="btnLock" class="btn">Lock</button>
+        <div id="accessMsg" class="access__msg" aria-live="polite"></div>
+      </div>
+
+      <div class="filters" role="region" aria-label="Filters">
+        <div class="field">
+          <label class="label" for="catFilter">Cat.</label>
+          <select id="catFilter" class="select">
+            <option value="ALL">All</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="gradeFilter">Grade</label>
+          <select id="gradeFilter" class="select">
+            <option value="ALL">All</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="section">
+      <div class="section__head">
+        <h2 class="section__title">Algorithmic Trading — Signal Forecast</h2>
+        <div class="section__sub">Rule-based / indicator pipeline (planned)</div>
+      </div>
+      <div class="table-wrap">
+        <table class="tbl" aria-label="Algorithmic trading table">
+          <thead>
+            <tr>
+              <th>Stock</th>
+              <th>Ticker</th>
+              <th>Cat.</th>
+              <th>Grade</th>
+              <th class="secret">Price</th>
+              <th class="secret">Signal</th>
+              <th class="secret">Performance</th>
+            </tr>
+          </thead>
+          <tbody id="algoBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <h2 class="section__title">Machine Learning — Purchase Decision Panel</h2>
+        <div class="section__sub">Model score → grade → buy/sell/hold (planned)</div>
+      </div>
+      <div class="table-wrap">
+        <table class="tbl" aria-label="Machine learning table">
+          <thead>
+            <tr>
+              <th>Stock</th>
+              <th>Ticker</th>
+              <th>Cat.</th>
+              <th>Grade</th>
+              <th class="secret">Price</th>
+              <th class="secret">Signal</th>
+              <th class="secret">Performance</th>
+            </tr>
+          </thead>
+          <tbody id="mlBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <h2 class="section__title">Overbought / Oversold — Watchlist Tracker</h2>
+        <div class="section__sub">RSI / Stoch → OB/OS flag (planned)</div>
+      </div>
+      <div class="table-wrap">
+        <table class="tbl" aria-label="Overbought oversold table">
+          <thead>
+            <tr>
+              <th>Stock</th>
+              <th>Ticker</th>
+              <th>Cat.</th>
+              <th>Grade</th>
+              <th class="secret">Price</th>
+              <th class="secret">Signal</th>
+              <th class="secret">Performance</th>
+            </tr>
+          </thead>
+          <tbody id="ooBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
