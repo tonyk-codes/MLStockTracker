@@ -20,6 +20,8 @@ app = FastAPI(title="Portfolio Dashboard API")
 #   DASH_TOKEN_TTL_SEC : token lifetime (default 3600)
 #   DASH_CORS_ORIGINS  : comma-separated list of allowed origins (default '*')
 
+
+DASH_PASSCODE   : passcode
 PASSCODE = os.getenv("DASH_PASSCODE", "")
 SECRET_KEY = os.getenv("DASH_SECRET_KEY", "")
 TOKEN_TTL = int(os.getenv("DASH_TOKEN_TTL_SEC", "3600"))
