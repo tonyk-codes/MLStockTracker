@@ -14,7 +14,7 @@
 
 // If your backend is hosted on another domain, set this.
 // Example: const API_BASE = 'https://your-backend.onrender.com';
-const API_BASE = '';
+const API_BASE = 'http://localhost:8000';
 
 const $ = (s) => document.querySelector(s);
 
@@ -50,10 +50,6 @@ const STOCKS = [
 const appRoot = document.body;
 const lockPill = $("#lockPill");
 const lastUpdatedEl = $("#lastUpdated");
-const passInput = $("#passcode");
-const btnUnlock = $("#btnUnlock");
-const btnLock = $("#btnLock");
-const msg = $("#accessMsg");
 
 const catFilter = $("#catFilter");
 const gradeFilter = $("#gradeFilter");
@@ -62,23 +58,7 @@ const algoBody = $("#algoBody");
 const mlBody = $("#mlBody");
 const ooBody = $("#ooBody");
 
-// Session token (kept in memory + sessionStorage)
-function getToken(){ return sessionStorage.getItem('pd_token') || ''; }
-function setToken(t){ if(t) sessionStorage.setItem('pd_token', t); else sessionStorage.removeItem('pd_token'); }
-
 function unique(xs){ return [...new Set(xs)]; }
-
-function setLocked(locked){
-  appRoot.classList.toggle("locked", locked);
-  lockPill.textContent = locked ? "Locked" : "Unlocked";
-  lockPill.classList.toggle("meta-pill--lock", locked);
-  lockPill.classList.toggle("meta-pill--ok", !locked);
-}
-
-function setMessage(text, tone="neutral"){
-  msg.textContent = text;
-  msg.style.color = tone === "bad" ? "#dc2626" : (tone === "ok" ? "#0ea5a4" : "#556070");
-}
 
 function gradeBadge(grade){
   const cls = grade === "A" ? "gradeA" : (grade === "B" ? "gradeB" : "gradeC");
@@ -170,86 +150,26 @@ async function api(path, opts={}){
   return body;
 }
 
-async function unlock(){
-  const passcode = passInput.value || "";
-  if(!passcode){ setMessage("Please enter a passcode.", "bad"); return; }
-
-  btnUnlock.disabled = true;
-  setMessage("Checking…");
-
-  try{
-    const out = await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ passcode })
-    });
-
-    if(!out || !out.token) throw new Error('Login failed');
-    setToken(out.token);
-
-    setLocked(false);
-    passInput.value = "";
-    setMessage("Access granted.", "ok");
-
-    await refresh();
-  }catch(err){
-    const m = String(err?.message || err);
-    if(m.includes('Failed to fetch') || m.includes('NetworkError')){
-      setMessage("Backend not reachable. Deploy /server and set API_BASE in app.js.", "bad");
-    }else{
-      setMessage("Access denied.", "bad");
-    }
-    setToken('');
-    setLocked(true);
-    lastUpdatedEl.textContent = "Last updated: —";
-    render(null);
-  }finally{
-    btnUnlock.disabled = false;
-  }
-}
-
 async function refresh(){
-  const t = getToken();
-  if(!t){
-    setLocked(true);
-    render(null);
-    return;
-  }
   try{
-    const data = await api('/api/data', { method:'GET', auth:true });
+    const data = await api('/api/data', { method:'GET' });
     const updated = data.last_updated ? new Date(data.last_updated) : new Date();
     lastUpdatedEl.textContent = `Last updated: ${updated.toLocaleString()}`;
     render(data);
   }catch(err){
-    setMessage("Session expired. Unlock again.", "bad");
-    setToken('');
-    setLocked(true);
+    console.error(err);
     lastUpdatedEl.textContent = "Last updated: —";
     render(null);
   }
 }
 
-async function lock(){
-  setToken('');
-  setLocked(true);
-  setMessage("Locked.");
-  lastUpdatedEl.textContent = "Last updated: —";
-  render(null);
-  // optional backend logout
-  try{ await api('/api/logout', { method:'POST' }); }catch{}
-}
-
 (function init(){
   populateFilters();
-  setLocked(true);
-  render(null);
+  refresh();
 
   catFilter.addEventListener('change', () => refresh());
   gradeFilter.addEventListener('change', () => refresh());
 
-  btnUnlock.addEventListener('click', unlock);
-  btnLock.addEventListener('click', lock);
-  passInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') unlock(); });
-
-  // auto-refresh every 60s when unlocked
-  setInterval(() => { if(getToken()) refresh(); }, 60000);
+  // auto-refresh every 60s
+  setInterval(() => { refresh(); }, 60000);
 })();
