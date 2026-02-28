@@ -1,79 +1,78 @@
-# Portfolio Dashboard
+# ML Stock Tracker (Streamlit)
 
-A finance-style, white-theme stock dashboard designed for a GitHub repo homepage.
+This repository is Streamlit + Heroku only.
 
-## What you asked for (and what this repo provides)
+## Features
 
-- ✅ **Single-page dashboard** (index.html) with three tables.
-- ✅ **Professional finance look** (white background, navy accents).
-- ✅ **Sticky header** with passcode input + filters (Cat. / Grade) + **Last updated**.
-- ✅ **Full stock names** in the Stock column.
-- ✅ **True passcode gating (real security)** **requires a backend**.
+- Dark theme UI (non-blue primary background).
+- Top-banner `Refresh` button.
+- Two main action buttons:
+	- `Obtain Stock Price & yfinance Info`
+	- `Start Analysis / ML`
+- Live data only (no synthetic fallback rows).
+- Price display fields:
+	- current price
+	- percentage change
+	- lowest today
+	- highest today
+- Clickable stock name and ticker links to Yahoo Finance.
+- Add more stocks using a ticker input field.
+- News sentiment section with trend/volume charts for selected stock.
 
-### Important: GitHub Pages is static
-GitHub Pages cannot run Python or any server-side authentication.
-That means **true security is not possible with only index.html**.
-
-To get real security, you must host a backend that:
-1) verifies the passcode **server-side**, and
-2) only returns protected data (prices/signals/performance) after authentication.
-
-This ZIP includes a minimal backend under `/server`.
-
----
-
-## Option A (Recommended for true security): Run the included secure backend
-
-### 1) Install and run locally
+## Run locally
 
 ```bash
-cd server
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-source .venv/bin/activate
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# Set secrets (choose strong values)
-export DASH_PASSCODE='YOUR_STRONG_PASSCODE'
-export DASH_SECRET_KEY='A_LONG_RANDOM_STRING'
-
-uvicorn app:app --reload --port 8000
+streamlit run app.py
 ```
 
-Open http://localhost:8000
+Then open the URL shown by Streamlit (usually `http://localhost:8501`).
 
-### 2) Deploy to the internet
-Deploy the `/server` folder to a host that supports Python (Render, Fly.io, Azure App Service, etc.).
-Then serve the frontend from the same origin OR configure CORS.
+## Deploy on Heroku
 
-> If you want to keep GitHub Pages for frontend, you’ll need the backend on another domain + CORS.
+This project is ready for Heroku using `Procfile`.
 
----
+### 1) Create Heroku app
 
-## Live prices via Yahoo Finance (yfinance)
-The backend uses **yfinance** to fetch:
-- regular market price
-- pre-market price (when available)
-- post-market price (when available)
+```bash
+heroku login
+heroku create your-ml-stock-tracker
+```
 
-The UI shows:
-- `Price` (regular)
-- subline: `Pre … | Post …`
+### 2) Deploy
 
----
+```bash
+git add .
+git commit -m "Prepare Streamlit app for Heroku"
+git push heroku main
+```
 
-## File structure
+If your branch is `master`, use:
 
-- `index.html` – the dashboard page
-- `styles.css` – styling (finance white theme)
-- `app.js` – table render, filters, secure login flow
-- `server/app.py` – FastAPI backend (secure passcode + protected data)
-- `server/fetch_prices.py` – yfinance data fetch helper
-- `server/requirements.txt` – backend deps
+```bash
+git push heroku master
+```
 
----
+### 3) Open app
 
-## Notes
-- The *algorithm/ML/OB-OS* fields are placeholders (TBD) until you implement your logic.
-- The backend is where you can later compute signals/performance and return them in `/api/data`.
+```bash
+heroku open
+```
+
+### Notes
+
+- Heroku uses the command in `Procfile`:
+	- `streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true`
+- `runtime.txt` pins the Python version for repeatable deploys.
+- yfinance calls require outbound internet access from the dyno.
+
+## Project files
+
+- `app.py` - main Streamlit application
+- `requirements.txt` - Python dependencies
+- `Procfile` - Heroku web process command
+- `runtime.txt` - Python runtime pin for Heroku
 
