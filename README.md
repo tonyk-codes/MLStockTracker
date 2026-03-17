@@ -29,6 +29,14 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+If `streamlit` is not recognized, run with Python directly:
+
+```bash
+python -m streamlit run app.py
+```
+
+If you accidentally typed `strealit`, use `streamlit`.
+
 Then open the URL shown by Streamlit (usually `http://localhost:8501`).
 
 ## Deploy on Heroku

@@ -501,13 +501,8 @@ init_state()
 render_header()
 fetch_clicked, analysis_clicked, news_clicked, selected_ticker = render_sidebar()
 
-if not st.session_state.price_rows:
-    with st.spinner("Loading initial watchlist prices..."):
-        rows, failures = fetch_stock_snapshots_batch(st.session_state.watchlist)
-        st.session_state.price_rows = rows
-        st.session_state.last_refreshed = datetime.now(timezone.utc)
-        if failures:
-            log_event(f"Initial failures: {len(failures)}")
+if not st.session_state.price_rows and not st.session_state.fetch_logs:
+    log_event("Ready. Click 'Obtain Stock Price & yfinance Info' to load live quotes.")
 
 if fetch_clicked:
     with st.spinner("Fetching latest prices..."):
