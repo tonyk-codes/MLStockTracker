@@ -1,0 +1,10 @@
+[client]
+showErrorDetails = true
+
+[logger]
+level = "warning"
+
+[server]
+headless = false
+runOnSave = true
+port = 8501

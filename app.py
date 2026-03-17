@@ -1,5 +1,10 @@
+"""ML Stock Tracker with Our World in Data inspired layout."""
+
+from __future__ import annotations
+
 import json
 import math
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -10,9 +15,18 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-
-DEFAULT_TICKERS = [
-    "VUG", "VTI", "VOO", "QQQ", "TQQQ", "AMD", "TSLA", "MSFT", "KO", "BRK-B"
+# ---------------------------------------------------------------------------
+# WATCHLIST DEFAULTS (from user CSV attachment)
+# ---------------------------------------------------------------------------
+RAW_WATCHLIST = [
+    "AMDL.US", "GGLL.US", "MSFU.US", "QNCX.US", "BRK.B.US", "AMD.US", "OXY.US",
+    "AEG.US", "GOOGL.US", "BABA.US", "BABX.US", "TSLA.US", "SQQQ.US", "HIMZ.US",
+    "LULG.US", "AMZU.US", "NFXL.US", "BRKU.US", "PYPG.US", "ETHUSD.CC", "AGQ.US",
+    "GALDY.US", "BTCUSD.CC", "INTW.US", "KO.US", "NVDA.US", "01881.HK", "AAPU.US",
+    "GOOG.US", "MSFT.US", "SCHD.US", "VT.US", "GME.US", "SSO.US", "LCDL.US",
+    "TSLL.US", "METU.US", "META.US", "VUG.US", "NVDL.US", "SOXS.US", "UNHG.US",
+    "UNH.US", "LULU.US", "AAPL.US", "NKE.US", "QQQ.US", "VOO.US", "VTI.US",
+    "TQQQ.US", "LCID.US",
 ]
 
 POSITIVE_WORDS = {
@@ -24,277 +38,157 @@ NEGATIVE_WORDS = {
     "risk", "lawsuit", "decline", "sell", "negative", "warn", "warning",
 }
 
+HF_MODEL_ID = "ProsusAI/finbert"
+HF_ENDPOINT = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 
-st.set_page_config(page_title="ML Stock Tracker", page_icon="📈")
+st.set_page_config(page_title="ML Stock Tracker", layout="wide", initial_sidebar_state="expanded")
+
+OWID_STYLE = """
+<style>
+:root {
+    --owid-navy: #08306b;
+    --owid-blue: #1f5aa6;
+    --owid-accent: #d73a49;
+    --owid-bg: #f5f6f9;
+    --owid-panel: #ffffff;
+    --owid-border: #d9dee8;
+    --owid-text: #1f2937;
+    --owid-muted: #6b7280;
+    --owid-pos: #1f9d68;
+    --owid-neg: #c13737;
+}
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background: var(--owid-bg) !important;
+    color: var(--owid-text);
+    font-family: Georgia, "Times New Roman", serif;
+}
+[data-testid="stSidebar"] {
+    background: #eef2f8;
+    border-right: 1px solid var(--owid-border);
+}
+h1, h2, h3 {
+    font-family: Georgia, "Times New Roman", serif;
+    letter-spacing: -0.01em;
+}
+.owid-topbar {
+    background: var(--owid-navy);
+    color: #fff;
+    padding: 0.55rem 1rem;
+    border-bottom: 3px solid var(--owid-accent);
+    margin: -2.8rem -1rem 0.8rem -1rem;
+}
+.owid-hero {
+    background: linear-gradient(180deg, #f2f5fb 0%, #ffffff 100%);
+    border: 1px solid var(--owid-border);
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.9rem;
+}
+.owid-subnav {
+    border-bottom: 1px solid var(--owid-border);
+    padding-bottom: 0.35rem;
+    margin-top: 0.4rem;
+    color: var(--owid-muted);
+    font-size: 0.9rem;
+}
+.owid-panel {
+    background: var(--owid-panel);
+    border: 1px solid var(--owid-border);
+    padding: 0.8rem;
+    margin-bottom: 0.8rem;
+}
+.owid-metric {
+    background: #fff;
+    border: 1px solid var(--owid-border);
+    padding: 0.65rem;
+    text-align: center;
+}
+.owid-label {
+    color: var(--owid-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.owid-value {
+    font-size: 1.4rem;
+    margin-top: 0.2rem;
+}
+.pos { color: var(--owid-pos); }
+.neg { color: var(--owid-neg); }
+.neu { color: var(--owid-muted); }
+.stButton button {
+    border-radius: 2px !important;
+    border: 1px solid #b8c2d8 !important;
+}
+</style>
+"""
 
 
 def inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-            :root {
-                --bg-main: #15181d;
-                --bg-panel: #1c2027;
-                --line: #2f3642;
-                --text: #d9dee8;
-                --text-muted: #98a3b5;
-                --text-soft: #7d8899;
-            }
-            .stApp {
-                background: var(--bg-main);
-                color: var(--text);
-                font-size: 12px;
-            }
-            .block-container {
-                max-width: 980px;
-                padding-top: 1rem;
-                padding-bottom: 1.2rem;
-            }
-            .stButton > button {
-                min-height: 2.35rem;
-                border-radius: 6px;
-                border: 1px solid var(--line);
-                background: linear-gradient(180deg, #2a303a 0%, #242a33 100%);
-                color: var(--text);
-                font-size: 11px;
-                font-weight: 600;
-                letter-spacing: 0.01em;
-                white-space: normal;
-                line-height: 1.25;
-            }
-            .stButton > button:hover {
-                border-color: #465163;
-                color: #eef2f8;
-            }
-            .stTextInput > div > div > input,
-            .stSelectbox > div > div {
-                border-radius: 6px;
-                border: 1px solid var(--line);
-                background: #181c23;
-                color: var(--text);
-                font-size: 11px;
-            }
-            .terminal-head {
-                border: 1px solid var(--line);
-                border-radius: 8px;
-                background: linear-gradient(170deg, #20252d 0%, #1a1e25 100%);
-                padding: 12px 14px;
-                margin-bottom: 8px;
-            }
-            .head-kicker {
-                color: var(--text-soft);
-                font-size: 9px;
-                letter-spacing: 0.18em;
-                text-transform: uppercase;
-                margin-bottom: 3px;
-            }
-            .head-title {
-                color: #edf2f9;
-                font-size: 17px;
-                letter-spacing: 0.05em;
-                font-weight: 700;
-                margin-bottom: 2px;
-            }
-            .head-sub {
-                color: var(--text-muted);
-                font-size: 10px;
-            }
-            .status-row {
-                margin-top: 6px;
-                display: flex;
-                gap: 6px;
-                flex-wrap: wrap;
-            }
-            .status-chip {
-                border: 1px solid #3d4758;
-                border-radius: 999px;
-                padding: 2px 8px;
-                font-size: 10px;
-                color: #ccd5e4;
-                background: #252c37;
-            }
-            .pro-panel {
-                border: 1px solid var(--line);
-                border-radius: 8px;
-                background: var(--bg-panel);
-                padding: 9px;
-                margin-top: 9px;
-            }
-            .pro-head {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 8px;
-                padding: 3px 3px 8px;
-            }
-            .pro-title {
-                color: #e7edf8;
-                font-size: 11px;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                font-weight: 700;
-            }
-            .pro-sub {
-                color: var(--text-soft);
-                font-size: 10px;
-            }
-            .watchlist-chips {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 6px;
-                margin: 6px 0;
-            }
-            .ticker-chip {
-                border: 1px solid #3a4353;
-                border-radius: 999px;
-                padding: 2px 8px;
-                font-size: 10px;
-                background: #242c37;
-            }
-            .kpi-grid {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
-                margin-top: 6px;
-            }
-            .kpi {
-                border: 1px solid var(--line);
-                border-radius: 7px;
-                padding: 8px;
-                background: #20252e;
-            }
-            .kpi-label {
-                font-size: 9px;
-                letter-spacing: 0.09em;
-                text-transform: uppercase;
-                color: var(--text-soft);
-                margin-bottom: 5px;
-            }
-            .kpi-value {
-                font-size: 16px;
-                color: #edf2f9;
-                font-weight: 700;
-            }
-            .kpi-note {
-                font-size: 9px;
-                color: var(--text-muted);
-            }
-            .table-wrap {
-                overflow-x: auto;
-                border-top: 1px solid var(--line);
-            }
-            table.pro-table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            table.pro-table th {
-                font-size: 9px;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: var(--text-soft);
-                font-weight: 600;
-                text-align: left;
-                padding: 7px 7px;
-                border-bottom: 1px solid var(--line);
-                background: #1f242d;
-                position: sticky;
-                top: 0;
-            }
-            table.pro-table td {
-                font-size: 10px;
-                color: var(--text);
-                padding: 6px 7px;
-                border-bottom: 1px solid #2a303a;
-            }
-            table.pro-table tr:hover td {
-                background: #252c36;
-            }
-            .empty-note {
-                border: 1px dashed #394253;
-                border-radius: 6px;
-                color: var(--text-muted);
-                font-size: 10px;
-                padding: 9px;
-                margin: 3px;
-            }
-            .log-box {
-                border: 1px solid var(--line);
-                border-radius: 6px;
-                padding: 8px;
-                background: #171c24;
-                min-height: 120px;
-                max-height: 250px;
-                overflow-y: auto;
-                font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-                font-size: 10px;
-                color: #bcc7da;
-                line-height: 1.4;
-                white-space: pre-wrap;
-            }
-            a {
-                color: #afc1e4 !important;
-                text-decoration: none !important;
-            }
-            a:hover {
-                color: #d8e2f5 !important;
-                text-decoration: underline !important;
-            }
-            @media (max-width: 700px) {
-                .kpi-grid {
-                    grid-template-columns: 1fr;
-                }
-            }
-            @media (max-width: 920px) {
-                div[data-testid="stHorizontalBlock"] {
-                    flex-wrap: wrap;
-                    gap: 0.55rem;
-                }
-                div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
-                    min-width: 100% !important;
-                    flex: 1 1 100% !important;
-                }
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(OWID_STYLE, unsafe_allow_html=True)
+
+
+def normalize_watch_symbol(raw: str) -> str:
+    code = raw.strip().upper()
+    if not code:
+        return ""
+    if code == "BRK.B.US":
+        return "BRK-B"
+    if code.endswith("USD.CC"):
+        return f"{code[:3]}-USD"
+    if code.endswith(".US"):
+        return code[:-3]
+    if code.endswith(".HK"):
+        hk = code.split(".")[0].lstrip("0") or "0"
+        return f"{hk}.HK"
+    return code
+
+
+def build_default_watchlist() -> list[str]:
+    normalized = [normalize_watch_symbol(s) for s in RAW_WATCHLIST]
+    cleaned: list[str] = []
+    for symbol in normalized:
+        if symbol and symbol not in cleaned:
+            cleaned.append(symbol)
+    return cleaned
 
 
 def init_state() -> None:
-    if "watchlist" not in st.session_state:
-        st.session_state.watchlist = DEFAULT_TICKERS.copy()
-    if "last_refreshed" not in st.session_state:
-        st.session_state.last_refreshed = None
-    if "price_rows" not in st.session_state:
-        st.session_state.price_rows = []
-    if "analysis_rows" not in st.session_state:
-        st.session_state.analysis_rows = []
-    if "fetch_logs" not in st.session_state:
-        st.session_state.fetch_logs = []
-    if "network_status" not in st.session_state:
-        st.session_state.network_status = "Not checked"
-    if "news_rows" not in st.session_state:
-        st.session_state.news_rows = []
-    if "sentiment_trend_df" not in st.session_state:
-        st.session_state.sentiment_trend_df = pd.DataFrame(columns=["Date", "Avg Sentiment"])
-    if "sentiment_volume_df" not in st.session_state:
-        st.session_state.sentiment_volume_df = pd.DataFrame(columns=["Date", "Positive", "Negative"])
+    defaults = {
+        "watchlist": build_default_watchlist(),
+        "price_rows": [],
+        "analysis_rows": [],
+        "news_rows": [],
+        "fetch_logs": [],
+        "last_refreshed": None,
+        "trend_df": pd.DataFrame(columns=["Date", "Avg Sentiment"]),
+        "volume_df": pd.DataFrame(columns=["Date", "Positive", "Negative"]),
+        "hf_model_status": "Not checked",
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def log_event(message: str) -> None:
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    st.session_state.fetch_logs.append(f"[{timestamp}] {message}")
-    if len(st.session_state.fetch_logs) > 300:
-        st.session_state.fetch_logs = st.session_state.fetch_logs[-300:]
+    ts = datetime.now().strftime("%H:%M:%S")
+    st.session_state.fetch_logs.append(f"[{ts}] {message}")
+    if len(st.session_state.fetch_logs) > 200:
+        st.session_state.fetch_logs = st.session_state.fetch_logs[-200:]
 
 
-def normalize_ticker(raw: str) -> str:
-    return raw.strip().upper().replace(" ", "")
+def safe_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+        return None if pd.isna(parsed) else parsed
+    except (TypeError, ValueError):
+        return None
 
 
 def format_big_number(value: float | None) -> str:
     if value is None or (isinstance(value, float) and math.isnan(value)):
-        return "—"
+        return "-"
     if value >= 1_000_000_000:
         return f"{value / 1_000_000_000:.2f}B"
     if value >= 1_000_000:
@@ -306,27 +200,6 @@ def yahoo_link(ticker: str) -> str:
     return f"https://finance.yahoo.com/quote/{urllib.parse.quote(ticker)}"
 
 
-def percent_to_float(raw_percent: str) -> float | None:
-    if not raw_percent or raw_percent == "—":
-        return None
-    try:
-        return float(raw_percent.replace("%", ""))
-    except ValueError:
-        return None
-
-
-def safe_float(value) -> float | None:
-    if value is None:
-        return None
-    try:
-        parsed = float(value)
-        if pd.isna(parsed):
-            return None
-        return parsed
-    except (TypeError, ValueError):
-        return None
-
-
 def tokenized(text: str) -> list[str]:
     return re.findall(r"[a-z]+", text.lower())
 
@@ -335,596 +208,340 @@ def simple_sentiment_score(text: str) -> float:
     words = tokenized(text)
     if not words:
         return 0.0
-    pos = sum(1 for word in words if word in POSITIVE_WORDS)
-    neg = sum(1 for word in words if word in NEGATIVE_WORDS)
-    hits = pos + neg
-    if hits == 0:
+    pos = sum(1 for w in words if w in POSITIVE_WORDS)
+    neg = sum(1 for w in words if w in NEGATIVE_WORDS)
+    if pos + neg == 0:
         return 0.0
-    return (pos - neg) / hits
+    return (pos - neg) / (pos + neg)
 
 
-def check_yfinance_connectivity() -> tuple[bool, str]:
+def _hf_inference_call(text: str) -> tuple[str, float] | None:
+    token = os.getenv("HF_TOKEN")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    payload = json.dumps({"inputs": text, "options": {"wait_for_model": True}}).encode("utf-8")
+    req = urllib.request.Request(HF_ENDPOINT, data=payload, headers=headers, method="POST")
+
     try:
-        chart_url = "https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=5d&interval=1d"
-        req = urllib.request.Request(chart_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        result = payload.get("chart", {}).get("result")
-        if result:
-            return True, "Yahoo chart API reachable (internet OK)."
-        return False, "Yahoo chart API reachable but empty payload."
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
-        return False, f"Yahoo chart API probe failed: {exc}"
-
-
-def build_snapshot_row(
-    ticker: str,
-    stock_name: str,
-    current_price: float | None,
-    previous_close: float | None,
-    day_low: float | None,
-    day_high: float | None,
-    open_price: float | None,
-    volume: float | None,
-    market_cap: float | None,
-) -> dict:
-    pct_change = None
-    if current_price is not None and previous_close not in (None, 0):
-        pct_change = ((current_price - previous_close) / previous_close) * 100
-
-    link = yahoo_link(ticker)
-    return {
-        "Stock": f"<a href='{link}' target='_blank'>{stock_name}</a>",
-        "Ticker": f"<a href='{link}' target='_blank'>{ticker}</a>",
-        "Current Price": f"${current_price:,.2f}" if current_price is not None else "—",
-        "% Change": f"{pct_change:+.2f}%" if pct_change is not None else "—",
-        "Low (Today)": f"${day_low:,.2f}" if day_low is not None else "—",
-        "High (Today)": f"${day_high:,.2f}" if day_high is not None else "—",
-        "Open": f"${open_price:,.2f}" if open_price is not None else "—",
-        "Volume": format_big_number(volume) if volume is not None else "—",
-        "Market Cap": format_big_number(market_cap) if market_cap is not None else "—",
-    }
-
-
-def extract_market_slice(market_data: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    if market_data.empty:
-        return pd.DataFrame()
-
-    if not isinstance(market_data.columns, pd.MultiIndex):
-        return market_data.copy()
-
-    columns = market_data.columns
-
-    if ticker in columns.get_level_values(1):
-        extracted = market_data.xs(ticker, axis=1, level=1, drop_level=True)
-        return extracted if isinstance(extracted, pd.DataFrame) else extracted.to_frame()
-
-    if ticker in columns.get_level_values(0):
-        extracted = market_data[ticker]
-        return extracted if isinstance(extracted, pd.DataFrame) else extracted.to_frame()
-
-    return pd.DataFrame()
-
-
-def fetch_yahoo_chart_quote(ticker: str) -> dict | None:
-    encoded = urllib.parse.quote(ticker)
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded}?range=5d&interval=1d"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-
-    with urllib.request.urlopen(req, timeout=20) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    result = payload.get("chart", {}).get("result")
-    if not result:
+        log_event(f"HF inference unavailable, fallback used ({exc}).")
         return None
 
-    node = result[0]
-    meta = node.get("meta", {})
-    quote_list = node.get("indicators", {}).get("quote", [])
-    if not quote_list:
+    if isinstance(data, dict) and data.get("error"):
+        log_event(f"HF API error: {data['error']}")
         return None
 
-    quote = quote_list[0]
+    # Typical response: [[{"label":"positive","score":0.99}, ...]]
+    if isinstance(data, list) and data:
+        items = data[0] if isinstance(data[0], list) else data
+        best = max(items, key=lambda x: float(x.get("score", 0)))
+        label = str(best.get("label", "neutral")).lower()
+        score = float(best.get("score", 0))
+        if label == "positive":
+            signed_score = score
+        elif label == "negative":
+            signed_score = -score
+        else:
+            signed_score = 0.0
+        return label.capitalize(), signed_score
 
-    def last_valid(values):
-        if not values:
-            return None
-        for value in reversed(values):
-            parsed = safe_float(value)
-            if parsed is not None:
-                return parsed
-        return None
-
-    current_price = safe_float(meta.get("regularMarketPrice")) or last_valid(quote.get("close"))
-    previous_close = safe_float(meta.get("previousClose"))
-    day_low = safe_float(meta.get("regularMarketDayLow")) or last_valid(quote.get("low"))
-    day_high = safe_float(meta.get("regularMarketDayHigh")) or last_valid(quote.get("high"))
-    open_price = safe_float(meta.get("regularMarketOpen")) or last_valid(quote.get("open"))
-    volume = safe_float(meta.get("regularMarketVolume")) or last_valid(quote.get("volume"))
-    market_cap = safe_float(meta.get("marketCap"))
-
-    if current_price is None:
-        return None
-
-    return build_snapshot_row(
-        ticker=ticker,
-        stock_name=ticker,
-        current_price=current_price,
-        previous_close=previous_close,
-        day_low=day_low,
-        day_high=day_high,
-        open_price=open_price,
-        volume=volume,
-        market_cap=market_cap,
-    )
-
-
-def fetch_with_yfinance_download(ticker: str) -> dict | None:
-    history = yf.download(
-        tickers=ticker,
-        period="1mo",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        threads=False,
-    )
-    if history.empty or "Close" not in history.columns:
-        return None
-
-    valid = history.dropna(subset=["Close"])
-    if valid.empty:
-        return None
-
-    current_row = valid.iloc[-1]
-    previous_close = safe_float(valid.iloc[-2]["Close"]) if len(valid) > 1 else None
-    return build_snapshot_row(
-        ticker=ticker,
-        stock_name=ticker,
-        current_price=safe_float(current_row.get("Close")),
-        previous_close=previous_close,
-        day_low=safe_float(current_row.get("Low")),
-        day_high=safe_float(current_row.get("High")),
-        open_price=safe_float(current_row.get("Open")),
-        volume=safe_float(current_row.get("Volume")),
-        market_cap=None,
-    )
+    return None
 
 
 def fetch_stock_snapshots_batch(tickers: list[str]) -> tuple[list[dict], list[str]]:
     rows: list[dict] = []
     failures: list[str] = []
+    if not tickers:
+        return rows, failures
 
-    log_event(f"Starting fetch for {len(tickers)} ticker(s): {', '.join(tickers)}")
-
-    market_data = pd.DataFrame()
-    try:
-        market_data = yf.download(
-            tickers=tickers,
-            period="1mo",
-            interval="1d",
-            auto_adjust=False,
-            group_by="column",
-            progress=False,
-            threads=False,
-        )
-        if market_data.empty:
-            log_event("Batch yfinance download returned empty data frame.")
-        else:
-            log_event("Batch yfinance download succeeded.")
-    except Exception as exc:
-        log_event(f"Batch yfinance download failed: {exc}")
-
+    log_event(f"Fetching {len(tickers)} watchlist symbols...")
     for ticker in tickers:
-        log_event(f"Fetching {ticker}...")
-        slice_df = extract_market_slice(market_data, ticker)
-        if not slice_df.empty and "Close" in slice_df.columns:
-            valid = slice_df.dropna(subset=["Close"])
-            if not valid.empty:
-                current_row = valid.iloc[-1]
-                previous_close = safe_float(valid.iloc[-2]["Close"]) if len(valid) > 1 else None
-                row = build_snapshot_row(
-                    ticker=ticker,
-                    stock_name=ticker,
-                    current_price=safe_float(current_row.get("Close")),
-                    previous_close=previous_close,
-                    day_low=safe_float(current_row.get("Low")),
-                    day_high=safe_float(current_row.get("High")),
-                    open_price=safe_float(current_row.get("Open")),
-                    volume=safe_float(current_row.get("Volume")),
-                    market_cap=None,
-                )
-                rows.append(row)
-                log_event(f"{ticker}: loaded via yfinance batch.")
-                continue
-
         try:
-            y_row = fetch_with_yfinance_download(ticker)
-            if y_row is not None:
-                rows.append(y_row)
-                log_event(f"{ticker}: loaded via yfinance single-symbol download.")
+            hist = yf.download(ticker, period="1mo", interval="1d", auto_adjust=False, progress=False, threads=False)
+            if hist.empty or "Close" not in hist.columns:
+                failures.append(f"{ticker}: no market data")
                 continue
-            log_event(f"{ticker}: yfinance single-symbol download empty.")
-        except Exception as exc:
-            log_event(f"{ticker}: yfinance single-symbol error ({exc}).")
-
-        try:
-            chart_row = fetch_yahoo_chart_quote(ticker)
-            if chart_row is not None:
-                rows.append(chart_row)
-                log_event(f"{ticker}: loaded via direct Yahoo chart API.")
+            valid = hist.dropna(subset=["Close"])
+            if valid.empty:
+                failures.append(f"{ticker}: empty close series")
                 continue
-            log_event(f"{ticker}: direct Yahoo chart API returned empty payload.")
+            cur = valid.iloc[-1]
+            prev_close = safe_float(valid.iloc[-2]["Close"]) if len(valid) > 1 else None
+            close_val = safe_float(cur.get("Close"))
+            low_val = safe_float(cur.get("Low"))
+            high_val = safe_float(cur.get("High"))
+            open_val = safe_float(cur.get("Open"))
+            volume = safe_float(cur.get("Volume"))
+
+            pct_change = None
+            if close_val is not None and prev_close not in (None, 0):
+                pct_change = ((close_val - prev_close) / prev_close) * 100
+
+            rows.append({
+                "Ticker": f"<a href='{yahoo_link(ticker)}' target='_blank'>{ticker}</a>",
+                "Current": f"${close_val:,.2f}" if close_val is not None else "-",
+                "Change %": f"{pct_change:+.2f}%" if pct_change is not None else "-",
+                "Low": f"${low_val:,.2f}" if low_val is not None else "-",
+                "High": f"${high_val:,.2f}" if high_val is not None else "-",
+                "Open": f"${open_val:,.2f}" if open_val is not None else "-",
+                "Volume": format_big_number(volume),
+            })
         except Exception as exc:
-            log_event(f"{ticker}: direct Yahoo chart API error ({exc}).")
-
-        failures.append(f"{ticker}: all live data paths failed")
-        log_event(f"{ticker}: excluded (no live row returned).")
-
-    log_event(f"Fetch completed. Live rows={len(rows)}, excluded={len(failures)}")
+            failures.append(f"{ticker}: {exc}")
+    log_event(f"Price load complete: {len(rows)} success, {len(failures)} failed")
     return rows, failures
 
 
 def run_ml_analysis(ticker: str) -> dict:
-    hist = yf.download(
-        tickers=ticker,
-        period="6mo",
-        interval="1d",
-        auto_adjust=True,
-        progress=False,
-        threads=False,
-    )
+    hist = yf.download(ticker, period="6mo", interval="1d", auto_adjust=True, progress=False, threads=False)
     if hist.empty or len(hist) < 30 or "Close" not in hist.columns:
-        raise ValueError("Not enough history for analysis")
+        raise ValueError("not enough history")
 
     closes = hist["Close"].dropna()
     returns = closes.pct_change().dropna()
     x = np.arange(len(closes))
     slope = float(np.polyfit(x, np.asarray(closes, dtype=float), 1)[0])
-    volatility = float(returns.std() * np.sqrt(252)) if not returns.empty else np.nan
     momentum = ((closes.iloc[-1] / closes.iloc[-20]) - 1) * 100 if len(closes) >= 20 else np.nan
+    volatility = float(returns.std() * np.sqrt(252)) if not returns.empty else np.nan
 
     if pd.notna(momentum) and pd.notna(volatility):
-        if momentum > 3 and volatility < 0.45 and slope > 0:
-            signal = "Buy"
-            confidence = "High"
+        if momentum > 3 and slope > 0 and volatility < 0.45:
+            signal, confidence = "Buy", "High"
         elif momentum < -3 or slope < 0:
-            signal = "Sell"
-            confidence = "Medium"
+            signal, confidence = "Sell", "Medium"
         else:
-            signal = "Hold"
-            confidence = "Medium"
+            signal, confidence = "Hold", "Medium"
     else:
-        signal = "Hold"
-        confidence = "Low"
+        signal, confidence = "Hold", "Low"
 
     return {
         "Ticker": f"<a href='{yahoo_link(ticker)}' target='_blank'>{ticker}</a>",
         "Signal": signal,
         "Confidence": confidence,
-        "Momentum (20d)": f"{momentum:+.2f}%" if pd.notna(momentum) else "—",
-        "Volatility (Ann.)": f"{volatility:.2f}" if pd.notna(volatility) else "—",
+        "Momentum 20d": f"{momentum:+.2f}%" if pd.notna(momentum) else "-",
+        "Volatility": f"{volatility:.2f}" if pd.notna(volatility) else "-",
     }
 
 
 def fetch_news_sentiment(ticker: str) -> tuple[list[dict], pd.DataFrame, pd.DataFrame]:
-    log_event(f"Loading news for {ticker}...")
     stock = yf.Ticker(ticker)
     news_items = stock.news or []
-
     if not news_items:
-        log_event(f"{ticker}: no recent news returned by yfinance.")
         return [], pd.DataFrame(columns=["Date", "Avg Sentiment"]), pd.DataFrame(columns=["Date", "Positive", "Negative"])
 
-    rows: list[dict] = []
-    for item in news_items[:60]:
+    rows = []
+    hf_ok = False
+    for item in news_items[:30]:
         title = item.get("title") or ""
         summary = item.get("summary") or ""
         publisher = item.get("publisher") or "Unknown"
-        timestamp = item.get("providerPublishTime")
+        ts = item.get("providerPublishTime")
+        date_val = datetime.fromtimestamp(ts, tz=timezone.utc).date() if isinstance(ts, (int, float)) else datetime.now(timezone.utc).date()
+        text = f"{title}. {summary}".strip()
 
-        if isinstance(timestamp, (int, float)):
-            date_val = datetime.fromtimestamp(timestamp, tz=timezone.utc).date()
+        hf_res = _hf_inference_call(text[:900])
+        if hf_res:
+            sentiment, score = hf_res
+            hf_ok = True
         else:
-            date_val = datetime.now(timezone.utc).date()
+            score = simple_sentiment_score(text)
+            sentiment = "Positive" if score > 0.15 else ("Negative" if score < -0.15 else "Neutral")
 
-        score = simple_sentiment_score(f"{title} {summary}")
-        if score > 0.15:
-            sentiment = "Positive"
-        elif score < -0.15:
-            sentiment = "Negative"
-        else:
-            sentiment = "Neutral"
+        rows.append({
+            "Date": str(date_val),
+            "Publisher": publisher,
+            "Headline": title or "(No title)",
+            "Sentiment": sentiment,
+            "Score": round(score, 3),
+        })
 
-        rows.append(
-            {
-                "Date": str(date_val),
-                "Publisher": publisher,
-                "Headline": title or "(No title)",
-                "Sentiment": sentiment,
-                "Score": round(score, 3),
-            }
-        )
+    st.session_state.hf_model_status = f"Active ({HF_MODEL_ID})" if hf_ok else "Fallback lexicon"
 
     news_df = pd.DataFrame(rows)
-    trend_df = (
-        news_df.groupby("Date", as_index=False)
-        .agg(**{"Avg Sentiment": ("Score", "mean")})
-        .sort_values("Date")
-    )
+    trend_df = news_df.groupby("Date", as_index=False).agg(**{"Avg Sentiment": ("Score", "mean")}).sort_values("Date")
 
     volume_df = pd.DataFrame(
-        (
-            news_df[news_df["Sentiment"].isin(["Positive", "Negative"])]
-            .groupby(["Date", "Sentiment"], as_index=False)
-            .size()
-            .pivot(index="Date", columns="Sentiment", values="size")
-            .fillna(0)
-            .reset_index()
-            .sort_values("Date")
-        )
+        news_df[news_df["Sentiment"].isin(["Positive", "Negative"])]
+        .groupby(["Date", "Sentiment"], as_index=False)
+        .size()
+        .pivot(index="Date", columns="Sentiment", values="size")
+        .fillna(0)
+        .reset_index()
+        .sort_values("Date")
     )
-
     if "Positive" not in volume_df.columns:
-        volume_df.loc[:, "Positive"] = 0
+        volume_df["Positive"] = 0
     if "Negative" not in volume_df.columns:
-        volume_df.loc[:, "Negative"] = 0
+        volume_df["Negative"] = 0
 
-    log_event(f"{ticker}: processed {len(news_df)} news item(s) for sentiment.")
     return rows, trend_df, volume_df[["Date", "Positive", "Negative"]]
 
 
-def render_watchlist_chips(watchlist: list[str]) -> None:
-    chip_html = "".join(
-        f"<span class='ticker-chip'><a href='{yahoo_link(ticker)}' target='_blank'>{ticker}</a></span>"
-        for ticker in watchlist
-    )
-    st.markdown(f"<div class='watchlist-chips'>{chip_html}</div>", unsafe_allow_html=True)
+def render_table_html(rows: list[dict]) -> str:
+    if not rows:
+        return "<div class='owid-panel'>No rows to display.</div>"
+    df = pd.DataFrame(rows)
+    html = "<table style='width:100%;border-collapse:collapse;font-size:0.9rem'>"
+    html += "<thead><tr>"
+    for col in df.columns:
+        html += f"<th style='text-align:left;padding:0.45rem;border-bottom:1px solid #d9dee8;color:#6b7280'>{col}</th>"
+    html += "</tr></thead><tbody>"
+
+    for _, row in df.iterrows():
+        html += "<tr>"
+        for col in df.columns:
+            val = str(row[col])
+            cell_style = "padding:0.45rem;border-bottom:1px solid #edf0f6;"
+            if col in ("Change %", "Score"):
+                if val.startswith("+"):
+                    cell_style += "color:#1f9d68;"
+                elif val.startswith("-"):
+                    cell_style += "color:#c13737;"
+            html += f"<td style='{cell_style}'>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
 
 
-def render_kpis(rows: list[dict]) -> None:
-    changes = [percent_to_float(row.get("% Change", "—")) for row in rows]
-    valid_changes = [value for value in changes if value is not None]
-    gainers = len([value for value in valid_changes if value > 0])
-    losers = len([value for value in valid_changes if value < 0])
-    avg_move = (sum(valid_changes) / len(valid_changes)) if valid_changes else 0.0
-    tracked = len(rows)
-
+def render_header() -> None:
     st.markdown(
         """
-        <div class='kpi-grid'>
-            <div class='kpi'>
-                <div class='kpi-label'>Tracked Symbols</div>
-                <div class='kpi-value'>__TRACKED__</div>
-                <div class='kpi-note'>Rows currently loaded</div>
-            </div>
-            <div class='kpi'>
-                <div class='kpi-label'>Average Move</div>
-                <div class='kpi-value'>__AVG__</div>
-                <div class='kpi-note'>Daily percentage change</div>
-            </div>
-            <div class='kpi'>
-                <div class='kpi-label'>Gainers</div>
-                <div class='kpi-value'>__GAINERS__</div>
-                <div class='kpi-note'>Above 0%</div>
-            </div>
-            <div class='kpi'>
-                <div class='kpi-label'>Losers</div>
-                <div class='kpi-value'>__LOSERS__</div>
-                <div class='kpi-note'>Below 0%</div>
-            </div>
+        <div class="owid-topbar">
+            <strong>Our World in Data style</strong> | Stock Tracker Dashboard
         </div>
-        """.replace("__TRACKED__", str(tracked))
-        .replace("__AVG__", f"{avg_move:+.2f}%")
-        .replace("__GAINERS__", str(gainers))
-        .replace("__LOSERS__", str(losers)),
-        unsafe_allow_html=True,
-    )
-
-
-def render_html_table(rows: list[dict], title: str, subtitle: str, empty_text: str) -> None:
-    st.markdown(
-        f"""
-        <section class='pro-panel'>
-            <div class='pro-head'>
-                <div class='pro-title'>{title}</div>
-                <div class='pro-sub'>{subtitle}</div>
-            </div>
+        <div class="owid-hero">
+            <h2 style="margin:0;color:#08306b;">Market dashboard</h2>
+            <p style="margin:0.35rem 0 0.35rem 0;color:#4b5563;">Live watchlist quotes, rule-based ML signals, and Hugging Face sentiment.</p>
+            <div class="owid-subnav">Explore the data | Charts | Table | Analysis</div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if not rows:
-        st.markdown(f"<div class='empty-note'>{empty_text}</div></section>", unsafe_allow_html=True)
-        return
 
-    frame = pd.DataFrame(rows)
-    table_html = frame.to_html(index=False, escape=False, classes="pro-table")
-    st.markdown(f"<div class='table-wrap'>{table_html}</div></section>", unsafe_allow_html=True)
+def render_sidebar() -> tuple[bool, bool, bool, str]:
+    with st.sidebar:
+        st.markdown("### Controls")
+        selected_ticker = st.selectbox("Ticker for analysis", options=st.session_state.watchlist, index=0)
+
+        add_raw = st.text_input("Add watchlist symbols", placeholder="AAPL, BRK.B.US, ETHUSD.CC")
+        if st.button("Add symbols", use_container_width=True):
+            items = [normalize_watch_symbol(x) for x in add_raw.split(",")]
+            items = [x for x in items if x]
+            for item in items:
+                if item not in st.session_state.watchlist:
+                    st.session_state.watchlist.append(item)
+                    log_event(f"Added {item}")
+
+        fetch_clicked = st.button("Obtain Stock Price & yfinance Info", use_container_width=True)
+        analysis_clicked = st.button("Start Analysis / ML", use_container_width=True)
+        news_clicked = st.button("Load News Sentiment", use_container_width=True)
+
+        st.markdown("---")
+        st.caption(f"HF sentiment model: {HF_MODEL_ID}")
+        st.caption(f"Model status: {st.session_state.hf_model_status}")
+
+    return fetch_clicked, analysis_clicked, news_clicked, selected_ticker
+
+
+def render_main() -> None:
+    tab1, tab2, tab3 = st.tabs(["Table", "Chart", "Statistics"])
+
+    with tab1:
+        st.markdown("<div class='owid-panel'><h3 style='margin-top:0'>Watchlist table</h3>", unsafe_allow_html=True)
+        st.markdown(render_table_html(st.session_state.price_rows), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if st.session_state.analysis_rows:
+            st.markdown("<div class='owid-panel'><h3 style='margin-top:0'>ML output</h3>", unsafe_allow_html=True)
+            st.markdown(render_table_html(st.session_state.analysis_rows), unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        if st.session_state.news_rows:
+            st.markdown("<div class='owid-panel'><h3 style='margin-top:0'>News sentiment</h3>", unsafe_allow_html=True)
+            st.markdown(render_table_html(st.session_state.news_rows), unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    with tab2:
+        if st.session_state.price_rows:
+            df = pd.DataFrame(st.session_state.price_rows)
+            df["TickerPlain"] = df["Ticker"].str.replace(r"<[^>]+>", "", regex=True)
+            df["CurrentFloat"] = pd.to_numeric(df["Current"].str.replace("$", "", regex=False).str.replace(",", "", regex=False), errors="coerce")
+            chart_df = df[["TickerPlain", "CurrentFloat"]].dropna()
+            st.bar_chart(chart_df.set_index("TickerPlain"), height=420)
+        else:
+            st.info("Fetch prices first to display chart.")
+
+        if not st.session_state.trend_df.empty:
+            st.line_chart(st.session_state.trend_df.set_index("Date"), height=260)
+
+    with tab3:
+        if st.session_state.price_rows:
+            df = pd.DataFrame(st.session_state.price_rows)
+            pct = pd.to_numeric(df["Change %"].str.replace("%", "", regex=False), errors="coerce")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(f"<div class='owid-metric'><div class='owid-label'>Tickers Loaded</div><div class='owid-value'>{len(df)}</div></div>", unsafe_allow_html=True)
+            c2.markdown(f"<div class='owid-metric'><div class='owid-label'>Avg Change</div><div class='owid-value'>{pct.mean():+.2f}%</div></div>", unsafe_allow_html=True)
+            c3.markdown(f"<div class='owid-metric'><div class='owid-label'>Best Move</div><div class='owid-value pos'>{pct.max():+.2f}%</div></div>", unsafe_allow_html=True)
+            c4.markdown(f"<div class='owid-metric'><div class='owid-label'>Worst Move</div><div class='owid-value neg'>{pct.min():+.2f}%</div></div>", unsafe_allow_html=True)
+        else:
+            st.info("No statistics yet. Load prices first.")
+
+        if st.session_state.fetch_logs:
+            st.markdown("### Activity log")
+            st.code("\n".join(st.session_state.fetch_logs[-70:]))
 
 
 inject_styles()
 init_state()
+render_header()
+fetch_clicked, analysis_clicked, news_clicked, selected_ticker = render_sidebar()
 
-refreshed = st.session_state.last_refreshed or "—"
-st.markdown(
-    f"""
-    <section class='terminal-head'>
-        <div class='head-kicker'>Institutional Trading Workspace</div>
-        <div class='head-title'>ML STOCK TRACKER TERMINAL</div>
-        <div class='head-sub'>Responsive trading dashboard.</div>
-        <div class='status-row'>
-            <span class='status-chip'>Last Refresh: {refreshed}</span>
-            <span class='status-chip'>Network: {st.session_state.network_status}</span>
-        </div>
-    </section>
-    """,
-    unsafe_allow_html=True,
-)
-
-if st.button("Refresh", use_container_width=True):
-    st.session_state.last_refreshed = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    st.session_state.fetch_logs = []
-    log_event("Dashboard refreshed.")
-    ok, detail = check_yfinance_connectivity()
-    st.session_state.network_status = "Online" if ok else "Unreachable"
-    log_event(detail)
-
-top_left, top_right = st.columns([3, 2])
-with top_left:
-    st.markdown(
-        "<section class='pro-panel'><div class='pro-head'><div class='pro-title'>Control Panel</div><div class='pro-sub'>Execution controls and symbol management</div></div>",
-        unsafe_allow_html=True,
-    )
-    new_tickers = st.text_input("Add symbols (comma-separated)", placeholder="AAPL, NVDA, SPY")
-    if st.button("Add Symbols", use_container_width=True):
-        candidates = [normalize_ticker(ticker) for ticker in new_tickers.split(",") if normalize_ticker(ticker)]
-        merged = st.session_state.watchlist.copy()
-        for ticker in candidates:
-            if ticker not in merged:
-                merged.append(ticker)
-                log_event(f"Added symbol: {ticker}")
-        st.session_state.watchlist = merged
-
-    render_watchlist_chips(st.session_state.watchlist)
-
-    fetch_clicked = st.button("Obtain Stock Price & yfinance Info", use_container_width=True)
-    analysis_clicked = st.button("Start Analysis / ML", use_container_width=True)
-    st.markdown("</section>", unsafe_allow_html=True)
-
-with top_right:
-    st.markdown(
-        "<section class='pro-panel'><div class='pro-head'><div class='pro-title'>Network & News</div><div class='pro-sub'>Connectivity and sentiment controls</div></div>",
-        unsafe_allow_html=True,
-    )
-    net_clicked = st.button("Check yfinance Network", use_container_width=True)
-    selected_ticker = st.selectbox(
-        "Selected stock for news sentiment",
-        options=st.session_state.watchlist,
-        index=0 if st.session_state.watchlist else None,
-    )
-    selected_ticker = str(selected_ticker) if selected_ticker is not None else ""
-    news_clicked = st.button("Load News Sentiment", use_container_width=True)
-    st.markdown("</section>", unsafe_allow_html=True)
-
-log_col, mini_col = st.columns([3, 2])
-with log_col:
-    st.markdown(
-        "<section class='pro-panel'><div class='pro-head'><div class='pro-title'>Fetch Log</div><div class='pro-sub'>Execution trace</div></div>",
-        unsafe_allow_html=True,
-    )
-    if st.session_state.fetch_logs:
-        logs_text = "\n".join(st.session_state.fetch_logs[-120:])
-        st.markdown(f"<div class='log-box'>{logs_text}</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<div class='log-box'>No execution logs yet.</div>", unsafe_allow_html=True)
-    st.markdown("</section>", unsafe_allow_html=True)
-
-with mini_col:
-    st.markdown(
-        "<section class='pro-panel'><div class='pro-head'><div class='pro-title'>Quick Stats</div><div class='pro-sub'>Live market snapshot</div></div>",
-        unsafe_allow_html=True,
-    )
-    render_kpis(st.session_state.price_rows)
-    st.markdown("</section>", unsafe_allow_html=True)
-
-if net_clicked:
-    ok, detail = check_yfinance_connectivity()
-    st.session_state.network_status = "Online" if ok else "Unreachable"
-    log_event(detail)
-    if ok:
-        st.success(detail)
-    else:
-        st.error(detail)
-
-if fetch_clicked:
-    with st.spinner("Fetching live prices and market fields..."):
+if not st.session_state.price_rows:
+    with st.spinner("Loading initial watchlist prices..."):
         rows, failures = fetch_stock_snapshots_batch(st.session_state.watchlist)
         st.session_state.price_rows = rows
+        st.session_state.last_refreshed = datetime.now(timezone.utc)
+        if failures:
+            log_event(f"Initial failures: {len(failures)}")
 
+if fetch_clicked:
+    with st.spinner("Fetching latest prices..."):
+        rows, failures = fetch_stock_snapshots_batch(st.session_state.watchlist)
+        st.session_state.price_rows = rows
+        st.session_state.last_refreshed = datetime.now(timezone.utc)
     if rows:
-        st.success(f"Loaded {len(rows)} live row(s).")
-    else:
-        st.error("No live rows returned. Check network/proxy or Yahoo availability.")
-
+        st.success(f"Loaded {len(rows)} symbols.")
     if failures:
-        st.warning("Excluded tickers (no live data): " + " | ".join(failures))
+        st.warning("Some symbols failed: " + " | ".join(failures[:8]))
 
 if analysis_clicked:
-    with st.spinner("Running analysis engine..."):
-        analysis_rows = []
-        analysis_failures = []
+    with st.spinner("Running ML analysis..."):
+        output = []
+        failed = []
         for ticker in st.session_state.watchlist:
-            log_event(f"Analyzing {ticker}...")
             try:
-                analysis_rows.append(run_ml_analysis(ticker))
+                output.append(run_ml_analysis(ticker))
             except Exception as exc:
-                analysis_failures.append(f"{ticker}: {exc}")
-                log_event(f"{ticker}: analysis failed ({exc}).")
-        st.session_state.analysis_rows = analysis_rows
-
-    st.success(f"Completed analysis for {len(st.session_state.analysis_rows)} ticker(s).")
-    if analysis_failures:
-        st.warning("Some analysis runs failed: " + " | ".join(analysis_failures))
+                failed.append(f"{ticker}: {exc}")
+        st.session_state.analysis_rows = output
+    st.success(f"ML completed for {len(output)} symbols.")
+    if failed:
+        st.warning("Some analyses failed: " + " | ".join(failed[:8]))
 
 if news_clicked:
-    with st.spinner(f"Loading recent news and sentiment for {selected_ticker}..."):
+    with st.spinner(f"Analyzing latest news for {selected_ticker}..."):
         try:
             rows, trend_df, volume_df = fetch_news_sentiment(selected_ticker)
             st.session_state.news_rows = rows
-            st.session_state.sentiment_trend_df = trend_df
-            st.session_state.sentiment_volume_df = volume_df
-            st.success(f"News sentiment loaded for {selected_ticker} ({len(rows)} item(s)).")
+            st.session_state.trend_df = trend_df
+            st.session_state.volume_df = volume_df
+            st.success(f"Loaded {len(rows)} news items for {selected_ticker}.")
         except Exception as exc:
-            st.session_state.news_rows = []
-            st.session_state.sentiment_trend_df = pd.DataFrame(columns=["Date", "Avg Sentiment"])
-            st.session_state.sentiment_volume_df = pd.DataFrame(columns=["Date", "Positive", "Negative"])
-            log_event(f"{selected_ticker}: news sentiment failed ({exc}).")
-            st.error(f"News sentiment loading failed: {exc}")
+            st.error(f"News sentiment failed: {exc}")
 
-render_html_table(
-    st.session_state.price_rows,
-    "Price Dashboard",
-    "Live online rows only (no synthetic fallback)",
-    "No live price rows loaded yet. Use 'Obtain Stock Price & yfinance Info'.",
-)
-
-render_html_table(
-    st.session_state.analysis_rows,
-    "Analysis / ML Output",
-    "Momentum, annualized volatility, and rule-based signal",
-    "No analysis data loaded yet. Use 'Start Analysis / ML'.",
-)
-
-st.markdown(
-    "<section class='pro-panel'><div class='pro-head'><div class='pro-title'>News Sentiment Intelligence</div><div class='pro-sub'>Generated only for selected stock on explicit request</div></div>",
-    unsafe_allow_html=True,
-)
-
-if st.session_state.sentiment_trend_df.empty and st.session_state.sentiment_volume_df.empty:
-    st.markdown(
-        "<div class='empty-note'>No sentiment data loaded yet. Select a stock and click 'Load News Sentiment'.</div>",
-        unsafe_allow_html=True,
-    )
-else:
-    st.caption("Average sentiment trend by date")
-    trend_chart = st.session_state.sentiment_trend_df.set_index("Date") if not st.session_state.sentiment_trend_df.empty else pd.DataFrame()
-    if trend_chart.empty:
-        st.info("No trend values to plot.")
-    else:
-        st.line_chart(trend_chart)
-
-    st.caption("Positive vs negative news volume by date")
-    volume_chart = st.session_state.sentiment_volume_df.set_index("Date") if not st.session_state.sentiment_volume_df.empty else pd.DataFrame()
-    if volume_chart.empty:
-        st.info("No volume values to plot.")
-    else:
-        st.bar_chart(volume_chart[["Positive", "Negative"]])
-
-st.markdown("</section>", unsafe_allow_html=True)
-
-render_html_table(
-    st.session_state.news_rows,
-    "Recent News Sentiment Table",
-    "Headline-level sentiment scores and publisher metadata",
-    "No news rows available for the selected stock.",
-)
+render_main()
