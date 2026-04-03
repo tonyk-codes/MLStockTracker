@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Stock Tracker</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Top Bar -->
+    <header class="topbar">
+        <div class="topbar-inner">
+            <div class="topbar-brand">
+                <span class="brand-icon">📊</span>
+                <span class="brand-text">ML Stock Tracker</span>
+            </div>
+            <nav class="topbar-nav">
+                <a href="#overview" class="nav-link active" data-tab="overview">Overview</a>
+                <a href="#ma-cross" class="nav-link" data-tab="ma-cross">MA Cross</a>
+                <a href="#sentiment" class="nav-link" data-tab="sentiment">Sentiment</a>
+                <a href="#finrl" class="nav-link" data-tab="finrl">FinRL Signals</a>
+                <a href="#correlation" class="nav-link" data-tab="correlation">Correlation</a>
+            </nav>
+            <div class="topbar-meta">
+                <span id="last-updated" class="meta-text">Loading...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1>Market Dashboard</h1>
+            <p class="hero-subtitle">ML-powered stock analysis using multiple strategies: Moving Average crossovers, sentiment analysis, FinRL-inspired signals, and correlation analysis.</p>
+        </div>
+    </section>
+
+    <!-- Summary Metrics -->
+    <section class="metrics-bar" id="metrics-bar">
+        <div class="container metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Stocks Tracked</div>
+                <div class="metric-value" id="metric-total">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Strong Buy</div>
+                <div class="metric-value positive" id="metric-buy">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Hold</div>
+                <div class="metric-value neutral" id="metric-hold">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Strong Sell</div>
+                <div class="metric-value negative" id="metric-sell">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Avg Change</div>
+                <div class="metric-value" id="metric-avg-change">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Best Performer</div>
+                <div class="metric-value positive" id="metric-best">—</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content Area -->
+    <main class="container main-content">
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Search ticker..." autocomplete="off">
+            </div>
+            <div class="filter-group">
+                <label>Signal:</label>
+                <select id="signal-filter">
+                    <option value="all">All</option>
+                    <option value="Strong Buy">Strong Buy</option>
+                    <option value="Buy">Buy</option>
+                    <option value="Hold">Hold</option>
+                    <option value="Sell">Sell</option>
+                    <option value="Strong Sell">Strong Sell</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Sort by:</label>
+                <select id="sort-select">
+                    <option value="score-desc">Score (High → Low)</option>
+                    <option value="score-asc">Score (Low → High)</option>
+                    <option value="change-desc">Change % (High → Low)</option>
+                    <option value="change-asc">Change % (Low → High)</option>
+                    <option value="ticker-asc">Ticker (A → Z)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- TAB: Overview -->
+        <section id="tab-overview" class="tab-content active">
+            <div class="panel">
+                <h2 class="panel-title">Combined Signals</h2>
+                <p class="panel-subtitle">Aggregated signal from all strategies for each stock</p>
+                <div class="table-wrapper">
+                    <table id="combined-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Price</th>
+                                <th>Change %</th>
+                                <th>Combined Signal</th>
+                                <th>Score</th>
+                                <th>MA Signal</th>
+                                <th>Sentiment</th>
+                                <th>FinRL Signal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="combined-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Signal Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="signal-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: MA Cross -->
+        <section id="tab-ma-cross" class="tab-content">
+            <div class="panel">
+                <h2 class="panel-title">Moving Average Golden / Death Cross</h2>
+                <p class="panel-subtitle">50-day vs 200-day SMA crossover analysis</p>
+                <div class="table-wrapper">
+                    <table id="ma-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Signal</th>
+                                <th>SMA 50</th>
+                                <th>SMA 200</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ma-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SMA Chart for selected ticker -->
+            <div class="panel">
+                <h2 class="panel-title">SMA Chart</h2>
+                <div class="chart-controls">
+                    <label>Select Ticker:</label>
+                    <select id="sma-chart-ticker"></select>
+                </div>
+                <div class="chart-container chart-lg">
+                    <canvas id="sma-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: Sentiment -->
+        <section id="tab-sentiment" class="tab-content">
+            <div class="panel">
+                <h2 class="panel-title">News Sentiment Analysis</h2>
+                <p class="panel-subtitle">FinBERT + lexicon-based sentiment scoring of recent headlines</p>
+                <div class="table-wrapper">
+                    <table id="sentiment-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Sentiment</th>
+                                <th>Avg Score</th>
+                                <th>News Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sentiment-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Sentiment Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="sentiment-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Headlines Detail for selected ticker -->
+            <div class="panel">
+                <h2 class="panel-title">Headlines Detail</h2>
+                <div class="chart-controls">
+                    <label>Select Ticker:</label>
+                    <select id="sentiment-detail-ticker"></select>
+                </div>
+                <div class="table-wrapper">
+                    <table id="headlines-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Headline</th>
+                                <th>Publisher</th>
+                                <th>Sentiment</th>
+                                <th>Score</th>
+                            </tr>
+                        </thead>
+                        <tbody id="headlines-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: FinRL -->
+        <section id="tab-finrl" class="tab-content">
+            <div class="panel">
+                <h2 class="panel-title">FinRL-Inspired Signals</h2>
+                <p class="panel-subtitle">Composite score from momentum, RSI, MACD, Bollinger Bands, volatility, Sharpe ratio</p>
+                <div class="table-wrapper">
+                    <table id="finrl-table" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Signal</th>
+                                <th>Confidence</th>
+                                <th>Score</th>
+                                <th>Momentum 20d</th>
+                                <th>RSI</th>
+                                <th>MACD</th>
+                                <th>Volatility</th>
+                                <th>Sharpe</th>
+                            </tr>
+                        </thead>
+                        <tbody id="finrl-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Reasons detail for selected ticker -->
+            <div class="panel">
+                <h2 class="panel-title">Signal Reasoning</h2>
+                <div class="chart-controls">
+                    <label>Select Ticker:</label>
+                    <select id="finrl-detail-ticker"></select>
+                </div>
+                <div id="finrl-reasons" class="reasons-list"></div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">RSI Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="rsi-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: Correlation -->
+        <section id="tab-correlation" class="tab-content">
+            <div class="panel">
+                <h2 class="panel-title">Stock Correlation Analysis</h2>
+                <p class="panel-subtitle">3-month return correlation between stocks in your watchlist</p>
+            </div>
+
+            <div class="panel-row">
+                <div class="panel half-panel">
+                    <h3 class="panel-title">Top Positive Correlations</h3>
+                    <div class="table-wrapper">
+                        <table id="corr-pos-table" class="data-table">
+                            <thead>
+                                <tr><th>Pair</th><th>Correlation</th></tr>
+                            </thead>
+                            <tbody id="corr-pos-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel half-panel">
+                    <h3 class="panel-title">Top Negative Correlations</h3>
+                    <div class="table-wrapper">
+                        <table id="corr-neg-table" class="data-table">
+                            <thead>
+                                <tr><th>Pair</th><th>Correlation</th></tr>
+                            </thead>
+                            <tbody id="corr-neg-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Correlation Heatmap</h2>
+                <div class="chart-container chart-xl">
+                    <canvas id="corr-heatmap"></canvas>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>ML Stock Tracker — Data from Yahoo Finance. Analysis generated via GitHub Actions.</p>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Loading analysis data...</p>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

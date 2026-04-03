@@ -1,0 +1,10 @@
+{
+  "generated_at": "Not yet generated — run the GitHub Actions workflow",
+  "watchlist": [],
+  "prices": [],
+  "ma_cross": [],
+  "sentiment": [],
+  "finrl": [],
+  "correlation": {"tickers": [], "matrix": [], "top_positive": [], "top_negative": []},
+  "combined": []
+}
