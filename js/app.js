@@ -1,5 +1,5 @@
 /* ================================================================
-   ML Stock Tracker - Dashboard JavaScript
+   ML Stock Tracker — Dark Theme Dashboard JS
    ================================================================ */
 
 const DATA_URL = "data/analysis.json";
@@ -11,12 +11,25 @@ let sentimentChart = null;
 let rsiChart = null;
 let corrHeatmap = null;
 
+// Dark-theme Chart.js defaults
+const GRID_COLOR = "rgba(148,163,184,0.10)";
+const TICK_COLOR = "#94a3b8";
+const TITLE_COLOR = "#e2e8f0";
+const LEGEND_COLOR = "#cbd5e1";
+
 // ================================================================
 // INIT
 // ================================================================
 document.addEventListener("DOMContentLoaded", async () => {
+    // Chart.js global dark defaults
+    Chart.defaults.color = TICK_COLOR;
+    Chart.defaults.borderColor = GRID_COLOR;
+
     setupTabs();
     setupFilters();
+    setupTiltCards();
+    setupParallax();
+    setupPanelGlow();
     await loadData();
 });
 
@@ -30,14 +43,76 @@ async function loadData() {
     } catch (err) {
         console.error("Failed to load data:", err);
         overlay.innerHTML = `
-            <p style="color:#c13737;font-weight:600;">Failed to load analysis data.</p>
-            <p style="color:#6b7280;font-size:13px;margin-top:8px;">
+            <p style="color:#f87171;font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Failed to load analysis data.</p>
+            <p style="color:#94a3b8;font-size:13px;margin-top:8px;">
                 Run the GitHub Actions workflow first to generate data.<br>
                 Error: ${escapeHtml(err.message)}
             </p>`;
         return;
     }
     overlay.classList.add("hidden");
+}
+
+// ================================================================
+// TILT CARD EFFECT
+// ================================================================
+function setupTiltCards() {
+    document.querySelectorAll(".tilt-card").forEach(card => {
+        card.addEventListener("mousemove", (e) => {
+            const rect = card.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            const rotateX = ((y - centerY) / centerY) * -8;
+            const rotateY = ((x - centerX) / centerX) * 8;
+            card.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.03,1.03,1.03)`;
+
+            // Move glare
+            const glare = card.querySelector(".glare");
+            if (glare) {
+                const gx = (x / rect.width) * 100;
+                const gy = (y / rect.height) * 100;
+                glare.style.background = `radial-gradient(circle at ${gx}% ${gy}%, rgba(255,255,255,0.18) 0%, transparent 60%)`;
+                glare.style.opacity = "1";
+            }
+        });
+        card.addEventListener("mouseleave", () => {
+            card.style.transform = "perspective(800px) rotateX(0) rotateY(0) scale3d(1,1,1)";
+            const glare = card.querySelector(".glare");
+            if (glare) glare.style.opacity = "0";
+        });
+    });
+}
+
+// ================================================================
+// PARALLAX EFFECT
+// ================================================================
+function setupParallax() {
+    const hero = document.querySelector("[data-parallax]");
+    if (!hero) return;
+    window.addEventListener("scroll", () => {
+        const scrollY = window.scrollY;
+        const before = hero.querySelector("::before") || hero;
+        hero.style.setProperty("--parallax-y", `${scrollY * 0.3}px`);
+        // Move the ::before pseudo via a CSS variable
+        hero.style.backgroundPositionY = `${scrollY * 0.4}px`;
+    }, { passive: true });
+}
+
+// ================================================================
+// PANEL MOUSE-GLOW EFFECT
+// ================================================================
+function setupPanelGlow() {
+    document.querySelectorAll(".panel").forEach(panel => {
+        panel.addEventListener("mousemove", (e) => {
+            const rect = panel.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            panel.style.setProperty("--mouse-x", x + "%");
+            panel.style.setProperty("--mouse-y", y + "%");
+        });
+    });
 }
 
 // ================================================================
@@ -56,7 +131,7 @@ function renderAll() {
     renderFinRLDetail();
     renderRSIChart();
     renderCorrelation();
-    document.getElementById("last-updated").textContent = `Updated: ${DATA.generated_at}`;
+    document.getElementById("last-updated").innerHTML = `<i class="fa-regular fa-clock"></i> ${DATA.generated_at}`;
 }
 
 // ================================================================
@@ -182,13 +257,13 @@ function renderSignalChart() {
         type: "doughnut",
         data: {
             labels,
-            datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fff" }]
+            datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#151c2c" }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: "bottom", labels: { font: { size: 12 } } }
+                legend: { position: "bottom", labels: { font: { size: 12 }, color: LEGEND_COLOR } }
             }
         }
     });
@@ -229,8 +304,8 @@ function renderSMAChart() {
         {
             label: "Close",
             data: hist.map(h => h.close),
-            borderColor: "#1f5aa6",
-            backgroundColor: "rgba(31,90,166,0.08)",
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,0.08)",
             fill: true,
             tension: 0.3,
             pointRadius: 0,
@@ -239,7 +314,7 @@ function renderSMAChart() {
         {
             label: "SMA 50",
             data: hist.map(h => h.sma50),
-            borderColor: "#d97706",
+            borderColor: "#fbbf24",
             borderDash: [5, 3],
             fill: false,
             tension: 0.3,
@@ -249,7 +324,7 @@ function renderSMAChart() {
         {
             label: "SMA 200",
             data: hist.map(h => h.sma200),
-            borderColor: "#c13737",
+            borderColor: "#f87171",
             borderDash: [8, 4],
             fill: false,
             tension: 0.3,
@@ -268,12 +343,12 @@ function renderSMAChart() {
             maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { position: "top", labels: { font: { size: 12 } } },
-                title: { display: true, text: `${ticker} — Price & Moving Averages`, font: { size: 14 } }
+                legend: { position: "top", labels: { font: { size: 12 }, color: LEGEND_COLOR } },
+                title: { display: true, text: `${ticker} — Price & Moving Averages`, font: { size: 14 }, color: TITLE_COLOR }
             },
             scales: {
-                x: { ticks: { maxTicksLimit: 12, font: { size: 11 } } },
-                y: { ticks: { font: { size: 11 } } }
+                x: { ticks: { maxTicksLimit: 12, font: { size: 11 }, color: TICK_COLOR }, grid: { color: GRID_COLOR } },
+                y: { ticks: { font: { size: 11 }, color: TICK_COLOR }, grid: { color: GRID_COLOR } }
             }
         }
     });
@@ -314,10 +389,10 @@ function renderSentimentChart() {
     const labels = Object.keys(counts).filter(k => counts[k] > 0);
     const values = labels.map(l => counts[l]);
     const colors = labels.map(l => {
-        if (l === "Positive") return "#1f9d68";
-        if (l === "Negative") return "#c13737";
-        if (l === "No News") return "#d1d5db";
-        return "#6366f1";
+        if (l === "Positive") return "#34d399";
+        if (l === "Negative") return "#f87171";
+        if (l === "No News") return "#475569";
+        return "#a78bfa";
     });
 
     const ctx = document.getElementById("sentiment-chart").getContext("2d");
@@ -326,14 +401,15 @@ function renderSentimentChart() {
         type: "bar",
         data: {
             labels,
-            datasets: [{ data: values, backgroundColor: colors, borderRadius: 4 }]
+            datasets: [{ data: values, backgroundColor: colors, borderRadius: 6 }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                y: { beginAtZero: true, ticks: { stepSize: 1, color: TICK_COLOR }, grid: { color: GRID_COLOR } },
+                x: { ticks: { color: TICK_COLOR }, grid: { color: GRID_COLOR } }
             }
         }
     });
@@ -423,9 +499,9 @@ function renderRSIChart() {
     const labels = items.map(i => i.ticker);
     const values = items.map(i => i.rsi);
     const colors = values.map(v => {
-        if (v < 30) return "#1f9d68";
-        if (v > 70) return "#c13737";
-        return "#6366f1";
+        if (v < 30) return "#34d399";
+        if (v > 70) return "#f87171";
+        return "#a78bfa";
     });
 
     const ctx = document.getElementById("rsi-chart").getContext("2d");
@@ -434,7 +510,7 @@ function renderRSIChart() {
         type: "bar",
         data: {
             labels,
-            datasets: [{ data: values, backgroundColor: colors, borderRadius: 3 }]
+            datasets: [{ data: values, backgroundColor: colors, borderRadius: 4 }]
         },
         options: {
             responsive: true,
@@ -447,10 +523,12 @@ function renderRSIChart() {
             scales: {
                 x: {
                     min: 0, max: 100,
-                    ticks: { font: { size: 11 } }
+                    ticks: { font: { size: 11 }, color: TICK_COLOR },
+                    grid: { color: GRID_COLOR }
                 },
                 y: {
-                    ticks: { font: { size: 10 } }
+                    ticks: { font: { size: 10 }, color: TICK_COLOR },
+                    grid: { color: GRID_COLOR }
                 }
             }
         }
@@ -531,7 +609,12 @@ function renderCorrHeatmap(corr) {
                             const p = dataPoints[idx];
                             return `${tickers[p.y]} / ${tickers[p.x]}: ${p.v.toFixed(3)}`;
                         }
-                    }
+                    },
+                    backgroundColor: "#1e293b",
+                    titleColor: "#e2e8f0",
+                    bodyColor: "#cbd5e1",
+                    borderColor: "#334155",
+                    borderWidth: 1,
                 }
             },
             scales: {
@@ -545,7 +628,9 @@ function renderCorrHeatmap(corr) {
                         font: { size: 9 },
                         maxRotation: 90,
                         minRotation: 45,
-                    }
+                        color: TICK_COLOR,
+                    },
+                    grid: { color: GRID_COLOR }
                 },
                 y: {
                     type: "linear",
@@ -556,7 +641,9 @@ function renderCorrHeatmap(corr) {
                         stepSize: 1,
                         callback: (val) => tickers[val] || "",
                         font: { size: 9 },
-                    }
+                        color: TICK_COLOR,
+                    },
+                    grid: { color: GRID_COLOR }
                 }
             }
         }
@@ -564,14 +651,13 @@ function renderCorrHeatmap(corr) {
 }
 
 function corrColor(val) {
-    if (val == null) return "rgba(200,200,200,0.3)";
-    // Red for negative, blue for positive, white for zero
+    if (val == null) return "rgba(71,85,105,0.3)";
     if (val > 0) {
         const intensity = Math.min(val, 1);
-        return `rgba(31, 90, 166, ${0.15 + intensity * 0.75})`;
+        return `rgba(59, 130, 246, ${0.15 + intensity * 0.75})`;
     } else {
         const intensity = Math.min(Math.abs(val), 1);
-        return `rgba(193, 55, 55, ${0.15 + intensity * 0.75})`;
+        return `rgba(248, 113, 113, ${0.15 + intensity * 0.75})`;
     }
 }
 
@@ -651,17 +737,17 @@ function sentimentBadge(label) {
 
 function signalColor(signal) {
     const s = (signal || "").toLowerCase();
-    if (s === "strong buy") return "#166534";
-    if (s === "buy") return "#1f9d68";
-    if (s === "hold") return "#6366f1";
-    if (s === "sell") return "#c13737";
-    if (s === "strong sell") return "#991b1b";
-    return "#9ca3af";
+    if (s === "strong buy") return "#059669";
+    if (s === "buy") return "#34d399";
+    if (s === "hold") return "#a78bfa";
+    if (s === "sell") return "#f87171";
+    if (s === "strong sell") return "#dc2626";
+    return "#64748b";
 }
 
 function scoreDisplay(score) {
     if (score == null) return "—";
-    const color = score > 0 ? "#1f9d68" : score < 0 ? "#c13737" : "#6366f1";
+    const color = score > 0 ? "#34d399" : score < 0 ? "#f87171" : "#a78bfa";
     const maxScore = 10;
     const pct = Math.min(Math.abs(score) / maxScore * 100, 100);
     return `

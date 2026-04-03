@@ -113,6 +113,13 @@ def fmt_big(val: float | None) -> str | None:
     return f"{val:,.0f}"
 
 
+def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex columns returned by yf.download for single tickers."""
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] for col in df.columns]
+    return df
+
+
 def log(msg: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
@@ -173,6 +180,7 @@ def fetch_prices(tickers: list[str]) -> list[dict]:
                 ticker, period="1mo", interval="1d",
                 auto_adjust=False, progress=False, threads=False
             )
+            hist = flatten_columns(hist)
             if hist.empty or "Close" not in hist.columns:
                 log(f"  {ticker}: no data")
                 continue
@@ -211,9 +219,12 @@ def ma_cross_analysis(tickers: list[str]) -> list[dict]:
                 ticker, period="1y", interval="1d",
                 auto_adjust=True, progress=False, threads=False
             )
+            hist = flatten_columns(hist)
             if hist.empty or len(hist) < 50 or "Close" not in hist.columns:
                 continue
-            closes = hist["Close"].dropna()
+            closes = hist["Close"].squeeze().dropna()
+            if isinstance(closes, pd.DataFrame):
+                closes = closes.iloc[:, 0]
             sma50 = closes.rolling(50).mean()
             sma200 = closes.rolling(200).mean() if len(closes) >= 200 else pd.Series(dtype=float)
 
@@ -335,14 +346,17 @@ def finrl_signals(tickers: list[str]) -> list[dict]:
                 ticker, period="6mo", interval="1d",
                 auto_adjust=True, progress=False, threads=False
             )
+            hist = flatten_columns(hist)
             if hist.empty or len(hist) < 30 or "Close" not in hist.columns:
                 continue
-            closes = hist["Close"].dropna()
+            closes = hist["Close"].squeeze().dropna()
+            if isinstance(closes, pd.DataFrame):
+                closes = closes.iloc[:, 0]
             returns = closes.pct_change().dropna()
 
             # Features
             x = np.arange(len(closes))
-            slope = float(np.polyfit(x, np.asarray(closes, dtype=float), 1)[0])
+            slope = float(np.polyfit(x, closes.values.flatten().astype(float), 1)[0])
             momentum_20d = float((closes.iloc[-1] / closes.iloc[-20] - 1) * 100) if len(closes) >= 20 else None
             momentum_5d = float((closes.iloc[-1] / closes.iloc[-5] - 1) * 100) if len(closes) >= 5 else None
             volatility = float(returns.std() * np.sqrt(252))
@@ -492,9 +506,12 @@ def correlation_analysis(tickers: list[str]) -> dict:
                 ticker, period="3mo", interval="1d",
                 auto_adjust=True, progress=False, threads=False
             )
+            hist = flatten_columns(hist)
             if hist.empty or "Close" not in hist.columns:
                 continue
-            closes = hist["Close"].dropna()
+            closes = hist["Close"].squeeze().dropna()
+            if isinstance(closes, pd.DataFrame):
+                closes = closes.iloc[:, 0]
             if len(closes) < 20:
                 continue
             all_closes[ticker] = closes
