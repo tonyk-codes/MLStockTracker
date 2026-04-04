@@ -15,18 +15,17 @@
     <header class="topbar">
         <div class="topbar-inner">
             <div class="topbar-brand">
-                <i class="fa-solid fa-chart-line brand-icon fa-beat-fade"></i>
                 <span class="brand-text">ML Stock Tracker</span>
             </div>
             <nav class="topbar-nav">
-                <a href="#overview" class="nav-link active" data-tab="overview"><i class="fa-solid fa-gauge-high"></i> Overview</a>
-                <a href="#ma-cross" class="nav-link" data-tab="ma-cross"><i class="fa-solid fa-arrow-trend-up"></i> MA Cross</a>
-                <a href="#sentiment" class="nav-link" data-tab="sentiment"><i class="fa-solid fa-face-smile"></i> Sentiment</a>
-                <a href="#finrl" class="nav-link" data-tab="finrl"><i class="fa-solid fa-brain"></i> FinRL Signals</a>
-                <a href="#correlation" class="nav-link" data-tab="correlation"><i class="fa-solid fa-circle-nodes"></i> Correlation</a>
+                <a href="#overview" class="nav-link active" data-tab="overview">Overview</a>
+                <a href="#ma-cross" class="nav-link" data-tab="ma-cross">MA Cross</a>
+                <a href="#sentiment" class="nav-link" data-tab="sentiment">Sentiment</a>
+                <a href="#finrl" class="nav-link" data-tab="finrl">FinRL Signals</a>
+                <a href="#correlation" class="nav-link" data-tab="correlation">Correlation</a>
             </nav>
             <div class="topbar-meta">
-                <span id="last-updated" class="meta-text"><i class="fa-regular fa-clock"></i> Loading...</span>
+                <span id="last-updated" class="meta-text">Loading...</span>
             </div>
         </div>
     </header>
@@ -34,7 +33,7 @@
     <!-- Hero Section -->
     <section class="hero" data-parallax>
         <div class="container hero-content">
-            <h1><i class="fa-solid fa-rocket fa-fade"></i> Market Dashboard</h1>
+            <h1>Market Dashboard</h1>
             <p class="hero-subtitle">ML-powered stock analysis using multiple strategies: Moving Average crossovers, sentiment analysis, FinRL-inspired signals, and correlation analysis.</p>
         </div>
     </section>
@@ -45,7 +44,6 @@
             <div class="tilt-card">
                 <div class="metric-card">
                     <div class="glare"></div>
-                    <div class="metric-icon"><i class="fa-solid fa-list-ol"></i></div>
                     <div class="metric-label">Stocks Tracked</div>
                     <div class="metric-value" id="metric-total">—</div>
                 </div>
@@ -53,7 +51,6 @@
             <div class="tilt-card">
                 <div class="metric-card">
                     <div class="glare"></div>
-                    <div class="metric-icon"><i class="fa-solid fa-arrow-up"></i></div>
                     <div class="metric-label">Strong Buy</div>
                     <div class="metric-value positive" id="metric-buy">—</div>
                 </div>
@@ -61,7 +58,6 @@
             <div class="tilt-card">
                 <div class="metric-card">
                     <div class="glare"></div>
-                    <div class="metric-icon"><i class="fa-solid fa-pause"></i></div>
                     <div class="metric-label">Hold</div>
                     <div class="metric-value neutral" id="metric-hold">—</div>
                 </div>
@@ -69,7 +65,6 @@
             <div class="tilt-card">
                 <div class="metric-card">
                     <div class="glare"></div>
-                    <div class="metric-icon"><i class="fa-solid fa-arrow-down"></i></div>
                     <div class="metric-label">Strong Sell</div>
                     <div class="metric-value negative" id="metric-sell">—</div>
                 </div>
@@ -77,7 +72,6 @@
             <div class="tilt-card">
                 <div class="metric-card">
                     <div class="glare"></div>
-                    <div class="metric-icon"><i class="fa-solid fa-percent"></i></div>
                     <div class="metric-label">Avg Change</div>
                     <div class="metric-value" id="metric-avg-change">—</div>
                 </div>
@@ -85,7 +79,6 @@
             <div class="tilt-card">
                 <div class="metric-card">
                     <div class="glare"></div>
-                    <div class="metric-icon"><i class="fa-solid fa-trophy"></i></div>
                     <div class="metric-label">Best Performer</div>
                     <div class="metric-value positive" id="metric-best">—</div>
                 </div>
@@ -103,7 +96,7 @@
                 <input type="text" id="search-input" placeholder="Search ticker..." autocomplete="off">
             </div>
             <div class="filter-group">
-                <label><i class="fa-solid fa-filter"></i> Signal:</label>
+                <label>Signal:</label>
                 <select id="signal-filter">
                     <option value="all">All</option>
                     <option value="Strong Buy">Strong Buy</option>
@@ -114,7 +107,7 @@
                 </select>
             </div>
             <div class="filter-group">
-                <label><i class="fa-solid fa-arrow-down-wide-short"></i> Sort:</label>
+                <label>Sort:</label>
                 <select id="sort-select">
                     <option value="score-desc">Score (High → Low)</option>
                     <option value="score-asc">Score (Low → High)</option>
@@ -129,7 +122,7 @@
         <section id="tab-overview" class="tab-content active">
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-table-cells"></i> Combined Signals</h2>
+                <h2 class="panel-title">Combined Signals</h2>
                 <p class="panel-subtitle">Aggregated signal from all strategies for each stock</p>
                 <div class="table-wrapper">
                     <table id="combined-table" class="data-table">
@@ -152,7 +145,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-chart-pie"></i> Signal Distribution</h2>
+                <h2 class="panel-title">Signal Distribution</h2>
                 <div class="chart-container">
                     <canvas id="signal-chart"></canvas>
                 </div>
@@ -163,7 +156,7 @@
         <section id="tab-ma-cross" class="tab-content">
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-arrow-trend-up"></i> Moving Average Golden / Death Cross</h2>
+                <h2 class="panel-title">Moving Average Golden / Death Cross</h2>
                 <p class="panel-subtitle">50-day vs 200-day SMA crossover analysis</p>
                 <div class="table-wrapper">
                     <table id="ma-table" class="data-table">
@@ -182,7 +175,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-chart-line"></i> SMA Chart</h2>
+                <h2 class="panel-title">SMA Chart</h2>
                 <div class="chart-controls">
                     <label>Select Ticker:</label>
                     <select id="sma-chart-ticker"></select>
@@ -197,7 +190,7 @@
         <section id="tab-sentiment" class="tab-content">
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-newspaper"></i> News Sentiment Analysis</h2>
+                <h2 class="panel-title">News Sentiment Analysis</h2>
                 <p class="panel-subtitle">FinBERT + lexicon-based sentiment scoring of recent headlines</p>
                 <div class="table-wrapper">
                     <table id="sentiment-table" class="data-table">
@@ -216,7 +209,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-chart-bar"></i> Sentiment Distribution</h2>
+                <h2 class="panel-title">Sentiment Distribution</h2>
                 <div class="chart-container">
                     <canvas id="sentiment-chart"></canvas>
                 </div>
@@ -224,7 +217,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-scroll"></i> Headlines Detail</h2>
+                <h2 class="panel-title">Headlines Detail</h2>
                 <div class="chart-controls">
                     <label>Select Ticker:</label>
                     <select id="sentiment-detail-ticker"></select>
@@ -250,7 +243,7 @@
         <section id="tab-finrl" class="tab-content">
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-brain"></i> FinRL-Inspired Signals</h2>
+                <h2 class="panel-title">FinRL-Inspired Signals</h2>
                 <p class="panel-subtitle">Composite score from momentum, RSI, MACD, Bollinger Bands, volatility, Sharpe ratio</p>
                 <div class="table-wrapper">
                     <table id="finrl-table" class="data-table">
@@ -274,7 +267,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-lightbulb"></i> Signal Reasoning</h2>
+                <h2 class="panel-title">Signal Reasoning</h2>
                 <div class="chart-controls">
                     <label>Select Ticker:</label>
                     <select id="finrl-detail-ticker"></select>
@@ -284,7 +277,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-wave-square"></i> RSI Distribution</h2>
+                <h2 class="panel-title">RSI Distribution</h2>
                 <div class="chart-container">
                     <canvas id="rsi-chart"></canvas>
                 </div>
@@ -295,14 +288,14 @@
         <section id="tab-correlation" class="tab-content">
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-circle-nodes"></i> Stock Correlation Analysis</h2>
+                <h2 class="panel-title">Stock Correlation Analysis</h2>
                 <p class="panel-subtitle">3-month return correlation between stocks in your watchlist</p>
             </div>
 
             <div class="panel-row">
                 <div class="panel half-panel">
                     <div class="glare"></div>
-                    <h3 class="panel-title"><i class="fa-solid fa-link"></i> Top Positive Correlations</h3>
+                    <h3 class="panel-title">Top Positive Correlations</h3>
                     <div class="table-wrapper">
                         <table id="corr-pos-table" class="data-table">
                             <thead>
@@ -314,7 +307,7 @@
                 </div>
                 <div class="panel half-panel">
                     <div class="glare"></div>
-                    <h3 class="panel-title"><i class="fa-solid fa-link-slash"></i> Top Negative Correlations</h3>
+                    <h3 class="panel-title">Top Negative Correlations</h3>
                     <div class="table-wrapper">
                         <table id="corr-neg-table" class="data-table">
                             <thead>
@@ -328,7 +321,7 @@
 
             <div class="panel">
                 <div class="glare"></div>
-                <h2 class="panel-title"><i class="fa-solid fa-grip"></i> Correlation Heatmap</h2>
+                <h2 class="panel-title">Correlation Heatmap</h2>
                 <div class="chart-container chart-xl">
                     <canvas id="corr-heatmap"></canvas>
                 </div>
@@ -340,14 +333,14 @@
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <p><i class="fa-solid fa-chart-line"></i> ML Stock Tracker — Data from Yahoo Finance. Analysis generated via GitHub Actions.</p>
+            <p>ML Stock Tracker — Data from Yahoo Finance. Analysis generated via GitHub Actions.</p>
         </div>
     </footer>
 
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay">
         <div class="loading-spinner"></div>
-        <p><i class="fa-solid fa-spinner fa-spin"></i> Loading analysis data...</p>
+        <p>Loading analysis data...</p>
     </div>
 
     <script src="js/app.js"></script>

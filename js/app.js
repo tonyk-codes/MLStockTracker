@@ -43,7 +43,7 @@ async function loadData() {
     } catch (err) {
         console.error("Failed to load data:", err);
         overlay.innerHTML = `
-            <p style="color:#f87171;font-weight:600;"><i class="fa-solid fa-triangle-exclamation"></i> Failed to load analysis data.</p>
+            <p style="color:#f87171;font-weight:600;">Failed to load analysis data.</p>
             <p style="color:#94a3b8;font-size:13px;margin-top:8px;">
                 Run the GitHub Actions workflow first to generate data.<br>
                 Error: ${escapeHtml(err.message)}
@@ -131,7 +131,7 @@ function renderAll() {
     renderFinRLDetail();
     renderRSIChart();
     renderCorrelation();
-    document.getElementById("last-updated").innerHTML = `<i class="fa-regular fa-clock"></i> ${DATA.generated_at}`;
+    document.getElementById("last-updated").textContent = DATA.generated_at;
 }
 
 // ================================================================
@@ -752,7 +752,7 @@ function scoreDisplay(score) {
     const pct = Math.min(Math.abs(score) / maxScore * 100, 100);
     return `
         <div class="score-bar">
-            <span style="color:${color};font-weight:600;min-width:38px;">${score > 0 ? "+" : ""}${score.toFixed(1)}</span>
+            <span style="color:${color};font-weight:600;min-width:32px;">${score > 0 ? "+" : ""}${score.toFixed(1)}</span>
             <div class="score-bar-track">
                 <div class="score-bar-fill" style="width:${pct}%;background:${color};"></div>
             </div>
