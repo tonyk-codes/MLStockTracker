@@ -3,346 +3,202 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ML Stock Tracker</title>
+    <title>Machine Learning Signal Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-    <!-- Top Bar -->
-    <header class="topbar">
-        <div class="topbar-inner">
-            <div class="topbar-brand">
-                <span class="brand-text">ML Stock Tracker</span>
-            </div>
-            <nav class="topbar-nav">
-                <a href="#overview" class="nav-link active" data-tab="overview">Overview</a>
-                <a href="#ma-cross" class="nav-link" data-tab="ma-cross">MA Cross</a>
-                <a href="#sentiment" class="nav-link" data-tab="sentiment">Sentiment</a>
-                <a href="#finrl" class="nav-link" data-tab="finrl">FinRL Signals</a>
-                <a href="#correlation" class="nav-link" data-tab="correlation">Correlation</a>
-            </nav>
-            <div class="topbar-meta">
-                <span id="last-updated" class="meta-text">Loading...</span>
+
+<!-- Header -->
+<header class="header">
+    <div class="header-inner">
+        <div style="display:flex;align-items:center;gap:12px">
+            <span class="brand-wordmark">MLSP</span>
+            <div class="brand-text-group">
+                <span class="brand-name">Machine Learning Signal Platform</span>
+                <span class="brand-sub">US Equities &middot; TL/N Classification &middot; On-Demand Analysis</span>
             </div>
         </div>
-    </header>
-
-    <!-- Hero Section -->
-    <section class="hero" data-parallax>
-        <div class="container hero-content">
-            <h1>Market Dashboard</h1>
-            <p class="hero-subtitle">ML-powered stock analysis using multiple strategies: Moving Average crossovers, sentiment analysis, FinRL-inspired signals, and correlation analysis.</p>
+        <div class="header-meta">
+            <span class="meta-label">LAST RUN</span>
+            <span id="meta-generated" class="meta-value">&mdash;</span>
+            <span class="meta-sep">|</span>
+            <span class="meta-label">QQQ 5D</span>
+            <span id="meta-qqq" class="meta-value">&mdash;</span>
         </div>
-    </section>
-
-    <!-- Summary Metrics -->
-    <section class="metrics-bar" id="metrics-bar">
-        <div class="container metrics-grid">
-            <div class="tilt-card">
-                <div class="metric-card">
-                    <div class="glare"></div>
-                    <div class="metric-label">Stocks Tracked</div>
-                    <div class="metric-value" id="metric-total">—</div>
-                </div>
-            </div>
-            <div class="tilt-card">
-                <div class="metric-card">
-                    <div class="glare"></div>
-                    <div class="metric-label">Strong Buy</div>
-                    <div class="metric-value positive" id="metric-buy">—</div>
-                </div>
-            </div>
-            <div class="tilt-card">
-                <div class="metric-card">
-                    <div class="glare"></div>
-                    <div class="metric-label">Hold</div>
-                    <div class="metric-value neutral" id="metric-hold">—</div>
-                </div>
-            </div>
-            <div class="tilt-card">
-                <div class="metric-card">
-                    <div class="glare"></div>
-                    <div class="metric-label">Strong Sell</div>
-                    <div class="metric-value negative" id="metric-sell">—</div>
-                </div>
-            </div>
-            <div class="tilt-card">
-                <div class="metric-card">
-                    <div class="glare"></div>
-                    <div class="metric-label">Avg Change</div>
-                    <div class="metric-value" id="metric-avg-change">—</div>
-                </div>
-            </div>
-            <div class="tilt-card">
-                <div class="metric-card">
-                    <div class="glare"></div>
-                    <div class="metric-label">Best Performer</div>
-                    <div class="metric-value positive" id="metric-best">—</div>
-                </div>
-            </div>
+        <div class="header-actions">
+            <button id="btn-run" class="btn btn-primary">Run Analysis</button>
+            <label class="btn btn-secondary" style="cursor:pointer">
+                Upload Portfolio
+                <input type="file" id="portfolio-upload" accept=".xlsx,.xls,.csv" hidden>
+            </label>
         </div>
-    </section>
+    </div>
+</header>
 
-    <!-- Main Content Area -->
-    <main class="container main-content">
+<!-- Tab Nav -->
+<div class="tab-nav">
+    <button class="tab-btn active" data-tab="signals">Signal Analysis</button>
+    <button class="tab-btn" data-tab="correlation">Correlation Analysis</button>
+</div>
 
-        <!-- Filter Bar -->
-        <div class="filter-bar">
-            <div class="search-box">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="search-input" placeholder="Search ticker..." autocomplete="off">
-            </div>
-            <div class="filter-group">
-                <label>Signal:</label>
-                <select id="signal-filter">
-                    <option value="all">All</option>
-                    <option value="Strong Buy">Strong Buy</option>
-                    <option value="Buy">Buy</option>
-                    <option value="Hold">Hold</option>
-                    <option value="Sell">Sell</option>
-                    <option value="Strong Sell">Strong Sell</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>Sort:</label>
-                <select id="sort-select">
-                    <option value="score-desc">Score (High → Low)</option>
-                    <option value="score-asc">Score (Low → High)</option>
-                    <option value="change-desc">Change % (High → Low)</option>
-                    <option value="change-asc">Change % (Low → High)</option>
-                    <option value="ticker-asc">Ticker (A → Z)</option>
-                </select>
-            </div>
-        </div>
+<!-- Summary Bar -->
+<div class="summary-bar">
+    <div class="summary-stat">
+        <span class="stat-label">TOTAL</span>
+        <span class="stat-value" id="cnt-total">&mdash;</span>
+    </div>
+    <div class="summary-stat">
+        <span class="stat-label">TL CLASS</span>
+        <span class="stat-value" id="cnt-tl">&mdash;</span>
+    </div>
+    <div class="summary-stat buy">
+        <span class="stat-label">BUY</span>
+        <span class="stat-value" id="cnt-buy">&mdash;</span>
+    </div>
+    <div class="summary-stat sell">
+        <span class="stat-label">SELL</span>
+        <span class="stat-value" id="cnt-sell">&mdash;</span>
+    </div>
+    <div class="summary-stat hold">
+        <span class="stat-label">HOLD</span>
+        <span class="stat-value" id="cnt-hold">&mdash;</span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-filters">
+        <button class="filter-btn active" data-filter="ALL">ALL</button>
+        <button class="filter-btn buy" data-filter="BUY">BUY</button>
+        <button class="filter-btn sell" data-filter="SELL">SELL</button>
+        <button class="filter-btn hold" data-filter="HOLD">HOLD</button>
+        <button class="filter-btn tl" data-filter="TL">TL CLASS</button>
+    </div>
+</div>
 
-        <!-- TAB: Overview -->
-        <section id="tab-overview" class="tab-content active">
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Combined Signals</h2>
-                <p class="panel-subtitle">Aggregated signal from all strategies for each stock</p>
-                <div class="table-wrapper">
-                    <table id="combined-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Ticker</th>
-                                <th>Price</th>
-                                <th>Change %</th>
-                                <th>Combined Signal</th>
-                                <th>Score</th>
-                                <th>MA Signal</th>
-                                <th>Sentiment</th>
-                                <th>FinRL Signal</th>
-                            </tr>
-                        </thead>
-                        <tbody id="combined-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
+<!-- Panel: Signal Analysis -->
+<div id="panel-signals" class="tab-panel">
 
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Signal Distribution</h2>
-                <div class="chart-container">
-                    <canvas id="signal-chart"></canvas>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB: MA Cross -->
-        <section id="tab-ma-cross" class="tab-content">
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Moving Average Golden / Death Cross</h2>
-                <p class="panel-subtitle">50-day vs 200-day SMA crossover analysis</p>
-                <div class="table-wrapper">
-                    <table id="ma-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Ticker</th>
-                                <th>Signal</th>
-                                <th>SMA 50</th>
-                                <th>SMA 200</th>
-                            </tr>
-                        </thead>
-                        <tbody id="ma-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">SMA Chart</h2>
-                <div class="chart-controls">
-                    <label>Select Ticker:</label>
-                    <select id="sma-chart-ticker"></select>
-                </div>
-                <div class="chart-container chart-lg">
-                    <canvas id="sma-chart"></canvas>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB: Sentiment -->
-        <section id="tab-sentiment" class="tab-content">
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">News Sentiment Analysis</h2>
-                <p class="panel-subtitle">FinBERT + lexicon-based sentiment scoring of recent headlines</p>
-                <div class="table-wrapper">
-                    <table id="sentiment-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Ticker</th>
-                                <th>Sentiment</th>
-                                <th>Avg Score</th>
-                                <th>News Count</th>
-                            </tr>
-                        </thead>
-                        <tbody id="sentiment-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Sentiment Distribution</h2>
-                <div class="chart-container">
-                    <canvas id="sentiment-chart"></canvas>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Headlines Detail</h2>
-                <div class="chart-controls">
-                    <label>Select Ticker:</label>
-                    <select id="sentiment-detail-ticker"></select>
-                </div>
-                <div class="table-wrapper">
-                    <table id="headlines-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Headline</th>
-                                <th>Publisher</th>
-                                <th>Sentiment</th>
-                                <th>Score</th>
-                            </tr>
-                        </thead>
-                        <tbody id="headlines-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB: FinRL -->
-        <section id="tab-finrl" class="tab-content">
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">FinRL-Inspired Signals</h2>
-                <p class="panel-subtitle">Composite score from momentum, RSI, MACD, Bollinger Bands, volatility, Sharpe ratio</p>
-                <div class="table-wrapper">
-                    <table id="finrl-table" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Ticker</th>
-                                <th>Signal</th>
-                                <th>Confidence</th>
-                                <th>Score</th>
-                                <th>Momentum 20d</th>
-                                <th>RSI</th>
-                                <th>MACD</th>
-                                <th>Volatility</th>
-                                <th>Sharpe</th>
-                            </tr>
-                        </thead>
-                        <tbody id="finrl-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Signal Reasoning</h2>
-                <div class="chart-controls">
-                    <label>Select Ticker:</label>
-                    <select id="finrl-detail-ticker"></select>
-                </div>
-                <div id="finrl-reasons" class="reasons-list"></div>
-            </div>
-
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">RSI Distribution</h2>
-                <div class="chart-container">
-                    <canvas id="rsi-chart"></canvas>
-                </div>
-            </div>
-        </section>
-
-        <!-- TAB: Correlation -->
-        <section id="tab-correlation" class="tab-content">
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Stock Correlation Analysis</h2>
-                <p class="panel-subtitle">3-month return correlation between stocks in your watchlist</p>
-            </div>
-
-            <div class="panel-row">
-                <div class="panel half-panel">
-                    <div class="glare"></div>
-                    <h3 class="panel-title">Top Positive Correlations</h3>
-                    <div class="table-wrapper">
-                        <table id="corr-pos-table" class="data-table">
-                            <thead>
-                                <tr><th>Pair</th><th>Correlation</th></tr>
-                            </thead>
-                            <tbody id="corr-pos-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="panel half-panel">
-                    <div class="glare"></div>
-                    <h3 class="panel-title">Top Negative Correlations</h3>
-                    <div class="table-wrapper">
-                        <table id="corr-neg-table" class="data-table">
-                            <thead>
-                                <tr><th>Pair</th><th>Correlation</th></tr>
-                            </thead>
-                            <tbody id="corr-neg-tbody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="glare"></div>
-                <h2 class="panel-title">Correlation Heatmap</h2>
-                <div class="chart-container chart-xl">
-                    <canvas id="corr-heatmap"></canvas>
-                </div>
-            </div>
-        </section>
-
-    </main>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <p>ML Stock Tracker — Data from Yahoo Finance. Analysis generated via GitHub Actions.</p>
-        </div>
-    </footer>
-
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <p>Loading analysis data...</p>
+    <!-- Signal Table -->
+    <div class="table-wrap">
+        <table class="data-table" id="signals-table">
+            <thead>
+                <tr>
+                    <th class="col-ticker sortable" data-col="ticker">TICKER</th>
+                    <th class="col-name">NAME</th>
+                    <th class="col-signal sortable" data-col="signal">SIGNAL</th>
+                    <th class="col-cls sortable" data-col="classification">CLASS</th>
+                    <th class="sortable" data-col="price">PRICE</th>
+                    <th class="sortable" data-col="change_1d">1D%</th>
+                    <th class="sortable" data-col="dist_ma20_pct">vs MA20</th>
+                    <th class="sortable" data-col="dist_ma50_pct">vs MA50</th>
+                    <th class="sortable" data-col="rsi14">RSI14</th>
+                    <th class="sortable" data-col="ret5d">5D%</th>
+                    <th class="sortable" data-col="ret20d">20D%</th>
+                    <th class="sortable" data-col="ret60d">60D%</th>
+                    <th class="sortable" data-col="ret120d">120D%</th>
+                    <th class="col-reason">REASON</th>
+                </tr>
+            </thead>
+            <tbody id="signals-tbody">
+                <tr class="loading-row"><td colspan="14">Loading analysis data...</td></tr>
+            </tbody>
+        </table>
     </div>
 
-    <script src="js/app.js"></script>
+    <!-- Portfolio Panel (hidden until file loaded) -->
+    <div id="portfolio-panel" class="portfolio-panel hidden">
+        <div class="panel-header">
+            <span class="panel-title">Portfolio Analysis</span>
+            <span class="panel-note">PNL-SELL: TL class &ge;25% + RSI&ge;75 &nbsp;|&nbsp; N class &ge;12% + RSI&gt;65</span>
+            <button id="portfolio-close" class="btn-icon">CLOSE</button>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="col-ticker">TICKER</th>
+                        <th style="text-align:right">SHARES</th>
+                        <th style="text-align:right">AVG COST</th>
+                        <th style="text-align:right">PRICE</th>
+                        <th style="text-align:right">UNREALIZED%</th>
+                        <th style="text-align:right">MKT VALUE</th>
+                        <th style="text-align:right">SIGNAL</th>
+                    </tr>
+                </thead>
+                <tbody id="portfolio-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- Panel: Correlation Analysis -->
+<div id="panel-correlation" class="tab-panel hidden">
+    <div class="corr-layout">
+        <div class="corr-heatmap-wrap">
+            <div class="panel-header">
+                <span class="panel-title">60-Day Return Correlation Matrix</span>
+                <span class="panel-note">ETF-parent pairs and same-company tickers excluded</span>
+            </div>
+            <div class="heatmap-scroll">
+                <canvas id="corr-canvas"></canvas>
+            </div>
+        </div>
+        <div class="corr-tables-wrap">
+            <div class="corr-table-block">
+                <div class="panel-header">
+                    <span class="panel-title">Top Positive Correlations</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>T1</th><th>T2</th><th style="text-align:right">CORR</th></tr></thead>
+                        <tbody id="corr-pos-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="corr-table-block">
+                <div class="panel-header">
+                    <span class="panel-title">Top Negative Correlations</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>T1</th><th>T2</th><th style="text-align:right">CORR</th></tr></thead>
+                        <tbody id="corr-neg-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Run Analysis -->
+<div id="run-modal" class="modal-overlay hidden">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Dispatch GitHub Actions Workflow</span>
+            <button id="modal-close" class="btn-icon">X</button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-desc">
+                Triggers the <code>analyze.yml</code> workflow in your GitHub repository.
+                Requires a Personal Access Token (PAT) with <code>repo</code> or <code>actions:write</code> scope.
+                The token is not stored beyond this browser session.
+            </p>
+            <label class="form-label">GitHub Personal Access Token</label>
+            <input type="password" id="run-token" class="form-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+            <div id="run-status" class="run-status hidden"></div>
+        </div>
+        <div class="modal-footer">
+            <button id="modal-submit" class="btn btn-primary">Dispatch Workflow</button>
+            <button id="modal-cancel" class="btn btn-ghost">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="js/app.js"></script>
 </body>
 </html>

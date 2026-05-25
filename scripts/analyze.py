@@ -1,21 +1,45 @@
 """
-ML Stock Tracker - Analysis Pipeline
-Fetches stock data, runs ML strategies, outputs JSON for GitHub Pages dashboard.
+Machine Learning Signal Platform — Analysis Pipeline
 
-Strategies:
-1. MA Golden Cross (50/200 SMA)
-2. News Sentiment Analysis (FinBERT via HF API + lexicon fallback)
-3. FinRL-inspired signals (momentum, volatility, trend, mean-reversion)
-4. Stock Correlation Analysis
+Signal logic (from trading algorithm):
+
+  Symbol Classification:
+    TL = (ret60d >= +40%  OR  ret120d >= +80%)  AND  price >= 52w_high * 0.80
+    N  = all others
+
+  BUY_TL (ALL conditions required):
+    price > MA50
+    MA20 >= MA50
+    MA50 slope > 0
+    MA20 * 0.92 <= price <= MA20 * 1.02
+    35 <= RSI14 <= 65
+    QQQ 5d_ret > -5%
+
+  BUY_N (ALL conditions required):
+    price > MA20
+    price > MA50
+    MA20 * 0.93 <= price <= MA20 * 1.00
+    40 <= RSI14 <= 60
+    QQQ 5d_ret > 0
+
+  SELL_TL (ANY triggers, checked before BUY):
+    price < MA20 * 0.97   (broke below MA20)
+    price < peak60d * 0.82  (18% drawdown from 60-day peak)
+
+  SELL_N (ANY triggers, checked before BUY):
+    price < MA50
+    price < peak60d * 0.90  (10% drawdown from 60-day peak)
+
+  Note: unrealized PnL conditions are evaluated in the frontend
+  when user uploads a portfolio file with cost basis.
+
+Correlation:
+  60-day daily returns, excludes ETF-parent pairs and same-company tickers.
 """
 
 import json
 import math
-import os
-import re
 import sys
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,664 +48,282 @@ import pandas as pd
 import yfinance as yf
 
 # ---------------------------------------------------------------------------
-# CONFIG
+# Watchlist (US equities only, from Stock-List.csv)
+# BRK.B.US normalized to BRK-B for yfinance
 # ---------------------------------------------------------------------------
-RAW_WATCHLIST = [
-    "AMDL.US", "GGLL.US", "MSFU.US", "QNCX.US", "BRK.B.US", "AMD.US",
-    "OXY.US", "AEG.US", "GOOGL.US", "BABA.US", "BABX.US", "TSLA.US",
-    "SQQQ.US", "HIMZ.US", "LULG.US", "AMZU.US", "NFXL.US", "BRKU.US",
-    "PYPG.US", "ETHUSD.CC", "AGQ.US", "GALDY.US", "BTCUSD.CC", "INTW.US",
-    "KO.US", "NVDA.US", "01881.HK", "AAPU.US", "GOOG.US", "MSFT.US",
-    "SCHD.US", "VT.US", "GME.US", "SSO.US", "LCDL.US", "TSLL.US",
-    "METU.US", "META.US", "VUG.US", "NVDL.US", "SOXS.US", "UNHG.US",
-    "UNH.US", "LULU.US", "AAPL.US", "NKE.US", "QQQ.US", "VOO.US",
-    "VTI.US", "TQQQ.US", "LCID.US",
+TICKERS = [
+    "AEG", "AMD", "AMDL", "BABA", "BABX", "BRK-B", "GGLL", "MSFU",
+    "OXY", "QNCX", "TSLA", "AAPL", "AAPU", "AGQ", "AMZU", "BRKU",
+    "GALDY", "GME", "GOOG", "HIMZ", "INTW", "KO", "LCDL", "LCID",
+    "LULG", "LULU", "META", "METU", "MSFT", "NFXL", "NKE", "NVDA",
+    "NVDL", "PMRTY", "PYPG", "QQQ", "SCHD", "SOXS", "SQQQ", "SSO",
+    "TQQQ", "TSLL", "UNH", "UNHG", "VOO", "VT", "VTI", "VUG",
+    "GOOGL", "TSM",
 ]
 
-POSITIVE_WORDS = {
-    "beat", "beats", "growth", "upgrade", "surge", "gain", "bullish", "strong",
-    "record", "profit", "outperform", "buy", "rise", "improve", "positive",
-    "soar", "rally", "boost", "exceed", "optimistic", "breakout", "momentum",
-}
-NEGATIVE_WORDS = {
-    "miss", "cuts", "downgrade", "drop", "fall", "bearish", "weak", "loss",
-    "risk", "lawsuit", "decline", "sell", "negative", "warn", "warning",
-    "crash", "plunge", "slump", "recession", "default", "bankruptcy", "layoff",
+TICKER_NAMES = {
+    "AEG": "Aegon N.V.", "AMD": "Adv. Micro Devices",
+    "AMDL": "2x AMD (GraniteShares)", "BABA": "Alibaba Group",
+    "BABX": "2x BABA (GraniteShares)", "BRK-B": "Berkshire Hathaway B",
+    "GGLL": "2x GOOGL (Direxion)", "MSFU": "2x MSFT (Direxion)",
+    "OXY": "Occidental Petroleum", "QNCX": "Quince Therapeutics",
+    "TSLA": "Tesla Inc.", "AAPL": "Apple Inc.",
+    "AAPU": "2x AAPL (Direxion)", "AGQ": "2x Silver (ProShares)",
+    "AMZU": "2x AMZN (Direxion)", "BRKU": "2x BRK-B (Direxion)",
+    "GALDY": "Galderma Group ADS", "GME": "GameStop Corp.",
+    "GOOG": "Alphabet Inc. (C)", "HIMZ": "2x HIMS (Defiance)",
+    "INTW": "2x INTC (GraniteShares)", "KO": "Coca-Cola Co.",
+    "LCDL": "2x LCID (GraniteShares)", "LCID": "Lucid Group Inc.",
+    "LULG": "2x LULU (LeverageShares)", "LULU": "Lululemon Athletica",
+    "META": "Meta Platforms Inc.", "METU": "2x META (Direxion)",
+    "MSFT": "Microsoft Corp.", "NFXL": "2x NFLX (Direxion)",
+    "NKE": "Nike Inc.", "NVDA": "NVIDIA Corp.",
+    "NVDL": "2x NVDA (GraniteShares)", "PMRTY": "Pop Mart Intl ADS",
+    "PYPG": "2x PYPL (LeverageShares)", "QQQ": "Invesco QQQ Trust",
+    "SCHD": "Schwab US Dividend ETF", "SOXS": "3x Short Semi (Direxion)",
+    "SQQQ": "3x Short NDX (ProShares)", "SSO": "2x S&P500 (ProShares)",
+    "TQQQ": "3x NDX (ProShares)", "TSLL": "2x TSLA (Direxion)",
+    "UNH": "UnitedHealth Group", "UNHG": "2x UNH (LeverageShares)",
+    "VOO": "Vanguard S&P500 ETF", "VT": "Vanguard Total World ETF",
+    "VTI": "Vanguard Total Market ETF", "VUG": "Vanguard Growth ETF",
+    "GOOGL": "Alphabet Inc. (A)", "TSM": "Taiwan Semi ADS",
 }
 
-HF_MODEL_ID = "ProsusAI/finbert"
-HF_ENDPOINT = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
+# Pairs excluded from correlation: (stock, leveraged-ETF) and same-company
+_SKIP_PAIRS = frozenset([
+    ("AMD",   "AMDL"),  ("BABA",  "BABX"),  ("AAPL",  "AAPU"),
+    ("BRK-B", "BRKU"),  ("GOOGL", "GGLL"),  ("GOOG",  "GGLL"),
+    ("MSFT",  "MSFU"),  ("NVDA",  "NVDL"),  ("META",  "METU"),
+    ("TSLA",  "TSLL"),  ("LCID",  "LCDL"),  ("LULU",  "LULG"),
+    ("UNH",   "UNHG"),  ("QQQ",   "TQQQ"),  ("QQQ",   "SQQQ"),
+    ("GOOG",  "GOOGL"),  # Same company: Alphabet A/C shares
+])
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-# ---------------------------------------------------------------------------
-# HELPERS
-# ---------------------------------------------------------------------------
-def normalize_symbol(raw: str) -> str:
-    code = raw.strip().upper()
-    if not code:
-        return ""
-    if code == "BRK.B.US":
-        return "BRK-B"
-    if code.endswith("USD.CC"):
-        return f"{code[:3]}-USD"
-    if code.endswith(".US"):
-        return code[:-3]
-    if code.endswith(".HK"):
-        hk = code.split(".")[0].lstrip("0") or "0"
-        return f"{hk}.HK"
-    return code
-
-
-def build_watchlist() -> list[str]:
-    seen = set()
-    result = []
-    for raw in RAW_WATCHLIST:
-        sym = normalize_symbol(raw)
-        if sym and sym not in seen:
-            seen.add(sym)
-            result.append(sym)
-    return result
-
-
-def safe_float(val) -> float | None:
-    if val is None:
-        return None
-    try:
-        f = float(val)
-        return None if (math.isnan(f) or math.isinf(f)) else f
-    except (TypeError, ValueError):
-        return None
-
-
-def fmt_pct(val: float | None) -> str | None:
-    return f"{val:+.2f}%" if val is not None else None
-
-
-def fmt_price(val: float | None) -> str | None:
-    return f"{val:,.2f}" if val is not None else None
-
-
-def fmt_big(val: float | None) -> str | None:
-    if val is None:
-        return None
-    if val >= 1_000_000_000:
-        return f"{val / 1_000_000_000:.2f}B"
-    if val >= 1_000_000:
-        return f"{val / 1_000_000:.2f}M"
-    return f"{val:,.0f}"
-
-
-def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten MultiIndex columns returned by yf.download for single tickers."""
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] for col in df.columns]
-    return df
-
-
-def log(msg: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+def skip_pair(t1: str, t2: str) -> bool:
+    return (t1, t2) in _SKIP_PAIRS or (t2, t1) in _SKIP_PAIRS
 
 
 # ---------------------------------------------------------------------------
-# SENTIMENT HELPERS
+# Technical indicators
 # ---------------------------------------------------------------------------
-def tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-z]+", text.lower())
+def compute_rsi(arr: np.ndarray, period: int = 14) -> float:
+    if len(arr) < period + 2:
+        return float("nan")
+    d = np.diff(arr.astype(float))
+    up = np.where(d > 0, d, 0.0)
+    dn = np.where(d < 0, -d, 0.0)
+    ag = float(np.mean(up[:period]))
+    al = float(np.mean(dn[:period]))
+    for i in range(period, len(d)):
+        ag = (ag * (period - 1) + up[i]) / period
+        al = (al * (period - 1) + dn[i]) / period
+    return round(100.0 if al == 0 else 100.0 - 100.0 / (1.0 + ag / al), 2)
 
 
-def lexicon_sentiment(text: str) -> tuple[str, float]:
-    words = tokenize(text)
-    if not words:
-        return "Neutral", 0.0
-    pos = sum(1 for w in words if w in POSITIVE_WORDS)
-    neg = sum(1 for w in words if w in NEGATIVE_WORDS)
-    if pos + neg == 0:
-        return "Neutral", 0.0
-    score = (pos - neg) / (pos + neg)
-    label = "Positive" if score > 0.15 else ("Negative" if score < -0.15 else "Neutral")
-    return label, round(score, 4)
+def classify(ret60d, ret120d, price, high52w) -> str:
+    """TL if strong momentum AND not far below 52-week high."""
+    if price is None or high52w is None or high52w <= 0:
+        return "N"
+    momentum = (ret60d is not None and ret60d >= 40.0) or \
+               (ret120d is not None and ret120d >= 80.0)
+    return "TL" if (momentum and price >= high52w * 0.80) else "N"
 
 
-def hf_sentiment(text: str) -> tuple[str, float] | None:
-    token = os.getenv("HF_TOKEN")
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    payload = json.dumps({"inputs": text[:512], "options": {"wait_for_model": True}}).encode()
-    req = urllib.request.Request(HF_ENDPOINT, data=payload, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode())
-    except Exception:
-        return None
-    if isinstance(data, dict) and data.get("error"):
-        return None
-    if isinstance(data, list) and data:
-        items = data[0] if isinstance(data[0], list) else data
-        best = max(items, key=lambda x: float(x.get("score", 0)))
-        label = str(best.get("label", "neutral")).lower()
-        score = float(best.get("score", 0))
-        signed = score if label == "positive" else (-score if label == "negative" else 0.0)
-        return label.capitalize(), round(signed, 4)
-    return None
+def compute_signal(cls, price, ma20, ma50, slope50, rsi14, peak60d, qqq5d):
+    """Returns (signal, reason). SELL is checked before BUY."""
+    if cls == "TL":
+        if price < ma20 * 0.97:
+            pct = (price / ma20 - 1) * 100
+            return "SELL", f"TL: Broke below MA20 ({pct:.1f}% vs MA20)"
+        if peak60d > 0 and price < peak60d * 0.82:
+            dd = (price / peak60d - 1) * 100
+            return "SELL", f"TL: {dd:.1f}% drawdown from 60d peak (threshold -18%)"
+        if (price > ma50 and ma20 >= ma50 and slope50 > 0 and
+                ma20 * 0.92 <= price <= ma20 * 1.02 and
+                35 <= rsi14 <= 65 and qqq5d > -5):
+            dist = (price / ma20 - 1) * 100
+            return "BUY", (f"TL pullback setup: {dist:+.1f}% vs MA20, "
+                           f"RSI {rsi14:.0f}, QQQ5d {qqq5d:+.1f}%")
+        return "HOLD", (f"TL: No trigger — {(price/ma20-1)*100:+.1f}% vs MA20, "
+                        f"RSI {rsi14:.0f}")
+    else:
+        if price < ma50:
+            pct = (price / ma50 - 1) * 100
+            return "SELL", f"N: Below MA50 ({pct:.1f}%)"
+        if peak60d > 0 and price < peak60d * 0.90:
+            dd = (price / peak60d - 1) * 100
+            return "SELL", f"N: {dd:.1f}% drawdown from 60d peak (threshold -10%)"
+        if (price > ma20 and price > ma50 and
+                ma20 * 0.93 <= price <= ma20 * 1.00 and
+                40 <= rsi14 <= 60 and qqq5d > 0):
+            dist = (price / ma20 - 1) * 100
+            return "BUY", (f"N dip setup: {dist:+.1f}% vs MA20, "
+                           f"RSI {rsi14:.0f}, QQQ5d {qqq5d:+.1f}%")
+        return "HOLD", (f"N: No trigger — {(price/ma20-1)*100:+.1f}% vs MA20, "
+                        f"RSI {rsi14:.0f}")
 
 
 # ---------------------------------------------------------------------------
-# STRATEGY 1: PRICE SNAPSHOT + BASICS
+# Main analysis
 # ---------------------------------------------------------------------------
-def fetch_prices(tickers: list[str]) -> list[dict]:
-    log(f"Fetching prices for {len(tickers)} symbols...")
-    rows = []
-    for ticker in tickers:
+def run():
+    print("=" * 60)
+    print("Machine Learning Signal Platform — Analysis Pipeline")
+    print(f"Tickers: {len(TICKERS)}")
+    print("=" * 60)
+
+    print("\nDownloading price data (2y)...")
+    raw = yf.download(
+        TICKERS, period="2y",
+        auto_adjust=True, progress=False, threads=True,
+    )
+
+    if isinstance(raw.columns, pd.MultiIndex):
+        close_all = raw["Close"]
+    else:
+        close_all = raw
+
+    # QQQ 5-day return used as market filter
+    qqq5d = 0.0
+    if "QQQ" in close_all.columns:
+        qs = close_all["QQQ"].dropna()
+        if len(qs) >= 6:
+            qqq5d = float((qs.iloc[-1] / qs.iloc[-6] - 1) * 100)
+    print(f"QQQ 5d return: {qqq5d:+.2f}%")
+
+    stocks, valid = [], []
+
+    for ticker in TICKERS:
         try:
-            hist = yf.download(
-                ticker, period="1mo", interval="1d",
-                auto_adjust=False, progress=False, threads=False
-            )
-            hist = flatten_columns(hist)
-            if hist.empty or "Close" not in hist.columns:
-                log(f"  {ticker}: no data")
+            if ticker not in close_all.columns:
+                print(f"  SKIP  {ticker:8s} — no column")
                 continue
-            valid = hist.dropna(subset=["Close"])
-            if valid.empty:
+            s = close_all[ticker].dropna()
+            if len(s) < 55:
+                print(f"  SKIP  {ticker:8s} — {len(s)} rows")
                 continue
-            cur = valid.iloc[-1]
-            prev = safe_float(valid.iloc[-2]["Close"]) if len(valid) > 1 else None
-            close = safe_float(cur.get("Close"))
-            pct = ((close - prev) / prev * 100) if close and prev else None
-            rows.append({
-                "ticker": ticker,
-                "price": safe_float(cur.get("Close")),
-                "open": safe_float(cur.get("Open")),
-                "high": safe_float(cur.get("High")),
-                "low": safe_float(cur.get("Low")),
-                "volume": safe_float(cur.get("Volume")),
-                "change_pct": round(pct, 2) if pct is not None else None,
-                "prev_close": prev,
+
+            arr = s.values.astype(float)
+            px = float(arr[-1])
+            ma20 = float(np.mean(arr[-20:])) if len(arr) >= 20 else px
+            ma50 = float(np.mean(arr[-50:])) if len(arr) >= 50 else px
+
+            # MA50 slope: today vs 10 trading days ago
+            slope50 = (ma50 - float(np.mean(arr[-60:-10]))) if len(arr) >= 60 else 0.0
+
+            rsi14 = compute_rsi(arr)
+            if math.isnan(rsi14):
+                rsi14 = 50.0
+
+            def ret(d):
+                return float((arr[-1] / arr[-(d + 1)] - 1) * 100) \
+                    if len(arr) >= d + 1 else None
+
+            r5, r20, r60, r120, r250 = ret(5), ret(20), ret(60), ret(120), ret(250)
+            chg1d = float((arr[-1] / arr[-2] - 1) * 100) if len(arr) >= 2 else 0.0
+
+            w52   = arr[-252:] if len(arr) >= 252 else arr
+            high52 = float(np.max(w52))
+            low52  = float(np.min(w52))
+            peak60d = float(np.max(arr[-60:])) if len(arr) >= 60 else px
+
+            cls = classify(r60, r120, px, high52)
+            sig, reason = compute_signal(cls, px, ma20, ma50, slope50,
+                                          rsi14, peak60d, qqq5d)
+
+            stocks.append({
+                "ticker":        ticker,
+                "name":          TICKER_NAMES.get(ticker, ticker),
+                "price":         round(px, 4),
+                "change_1d":     round(chg1d, 2),
+                "ma20":          round(ma20, 4),
+                "ma50":          round(ma50, 4),
+                "ma50_slope":    round(slope50, 4),
+                "rsi14":         round(rsi14, 1),
+                "ret5d":         round(r5,   2) if r5   is not None else None,
+                "ret20d":        round(r20,  2) if r20  is not None else None,
+                "ret60d":        round(r60,  2) if r60  is not None else None,
+                "ret120d":       round(r120, 2) if r120 is not None else None,
+                "ret250d":       round(r250, 2) if r250 is not None else None,
+                "high52":        round(high52,  4),
+                "low52":         round(low52,   4),
+                "peak60d":       round(peak60d, 4),
+                "dist_ma20_pct": round((px / ma20 - 1) * 100, 2),
+                "dist_ma50_pct": round((px / ma50 - 1) * 100, 2),
+                "classification": cls,
+                "signal":        sig,
+                "reason":        reason,
             })
-        except Exception as e:
-            log(f"  {ticker}: error {e}")
-    log(f"  Prices done: {len(rows)} loaded")
-    return rows
+            valid.append(ticker)
 
+            r60s = f"{r60:+.1f}%" if r60 is not None else "n/a"
+            print(f"  {sig:4s}  {cls:2s}  {ticker:8s}  "
+                  f"${px:>10.4f}  RSI {rsi14:5.1f}  60d {r60s:>8}")
 
-# ---------------------------------------------------------------------------
-# STRATEGY 2: MA GOLDEN CROSS / DEATH CROSS (50/200 SMA)
-# ---------------------------------------------------------------------------
-def ma_cross_analysis(tickers: list[str]) -> list[dict]:
-    log("Running MA Golden/Death Cross analysis...")
-    results = []
-    for ticker in tickers:
-        try:
-            hist = yf.download(
-                ticker, period="1y", interval="1d",
-                auto_adjust=True, progress=False, threads=False
-            )
-            hist = flatten_columns(hist)
-            if hist.empty or len(hist) < 50 or "Close" not in hist.columns:
-                continue
-            closes = hist["Close"].squeeze().dropna()
-            if isinstance(closes, pd.DataFrame):
-                closes = closes.iloc[:, 0]
-            sma50 = closes.rolling(50).mean()
-            sma200 = closes.rolling(200).mean() if len(closes) >= 200 else pd.Series(dtype=float)
+        except Exception as exc:
+            print(f"  ERROR {ticker}: {exc}", file=sys.stderr)
 
-            current_sma50 = safe_float(sma50.iloc[-1])
-            current_sma200 = safe_float(sma200.iloc[-1]) if len(sma200) > 0 and not sma200.isna().all() else None
-            prev_sma50 = safe_float(sma50.iloc[-2]) if len(sma50) > 1 else None
-            prev_sma200 = safe_float(sma200.iloc[-2]) if (len(sma200) > 1 and not sma200.isna().all()) else None
+    # Correlation (60-day daily returns, excluding skip-pairs)
+    print(f"\nComputing correlation for {len(valid)} tickers...")
+    avail = [t for t in valid if t in close_all.columns]
+    ret_df = close_all[avail].pct_change().dropna().tail(62)
 
-            signal = "Insufficient Data"
-            if current_sma50 is not None and current_sma200 is not None:
-                if prev_sma50 is not None and prev_sma200 is not None:
-                    if prev_sma50 <= prev_sma200 and current_sma50 > current_sma200:
-                        signal = "Golden Cross"
-                    elif prev_sma50 >= prev_sma200 and current_sma50 < current_sma200:
-                        signal = "Death Cross"
-                    elif current_sma50 > current_sma200:
-                        signal = "Bullish (50 > 200)"
-                    else:
-                        signal = "Bearish (50 < 200)"
+    corr_matrix, top_pos, top_neg = {}, [], []
 
-            # Build SMA history for chart (last 60 days)
-            sma_history = []
-            start_idx = max(0, len(closes) - 60)
-            dates = closes.index[start_idx:]
-            for i, dt in enumerate(dates):
-                idx = start_idx + i
-                entry = {"date": dt.strftime("%Y-%m-%d")}
-                entry["close"] = safe_float(closes.iloc[idx])
-                if idx < len(sma50):
-                    entry["sma50"] = safe_float(sma50.iloc[idx])
-                if idx < len(sma200) and not sma200.isna().all():
-                    entry["sma200"] = safe_float(sma200.iloc[idx])
-                sma_history.append(entry)
+    if len(ret_df) >= 20:
+        C = ret_df.corr()
+        for t in avail:
+            corr_matrix[t] = {
+                t2: (round(float(C.loc[t, t2]), 4)
+                     if not math.isnan(C.loc[t, t2]) else 0.0)
+                for t2 in avail
+                if t in C.index and t2 in C.columns
+            }
 
-            results.append({
-                "ticker": ticker,
-                "signal": signal,
-                "sma50": current_sma50,
-                "sma200": current_sma200,
-                "sma_history": sma_history,
-            })
-        except Exception as e:
-            log(f"  MA {ticker}: {e}")
-    log(f"  MA analysis done: {len(results)} stocks")
-    return results
+        pairs = []
+        for i, t1 in enumerate(avail):
+            for t2 in avail[i + 1:]:
+                if skip_pair(t1, t2):
+                    continue
+                if t1 in C.index and t2 in C.columns:
+                    v = C.loc[t1, t2]
+                    if not math.isnan(v):
+                        pairs.append([t1, t2, round(float(v), 4)])
 
+        top_pos = sorted(pairs, key=lambda x: x[2], reverse=True)[:15]
+        top_neg = sorted(pairs, key=lambda x: x[2])[:15]
 
-# ---------------------------------------------------------------------------
-# STRATEGY 3: SENTIMENT ANALYSIS (NEWS)
-# ---------------------------------------------------------------------------
-def sentiment_analysis(tickers: list[str]) -> list[dict]:
-    log("Running sentiment analysis...")
-    results = []
-    for ticker in tickers:
-        try:
-            stock = yf.Ticker(ticker)
-            news_items = stock.news or []
-            if not news_items:
-                results.append({
-                    "ticker": ticker,
-                    "avg_score": 0.0,
-                    "label": "No News",
-                    "news_count": 0,
-                    "headlines": [],
-                })
-                continue
+    buy_c  = sum(1 for s in stocks if s["signal"] == "BUY")
+    sell_c = sum(1 for s in stocks if s["signal"] == "SELL")
+    hold_c = sum(1 for s in stocks if s["signal"] == "HOLD")
+    tl_c   = sum(1 for s in stocks if s["classification"] == "TL")
+    print(f"\nSummary: {len(stocks)} stocks | TL:{tl_c} | "
+          f"BUY:{buy_c} | SELL:{sell_c} | HOLD:{hold_c}")
 
-            headlines = []
-            scores = []
-            for item in news_items[:20]:
-                title = item.get("title") or ""
-                summary = item.get("summary") or ""
-                publisher = item.get("publisher") or "Unknown"
-                ts = item.get("providerPublishTime")
-                date_str = (
-                    datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-                    if isinstance(ts, (int, float))
-                    else datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                )
-                text = f"{title}. {summary}".strip()
-                hf_res = hf_sentiment(text)
-                if hf_res:
-                    label, score = hf_res
-                else:
-                    label, score = lexicon_sentiment(text)
-                scores.append(score)
-                headlines.append({
-                    "date": date_str,
-                    "title": title,
-                    "publisher": publisher,
-                    "sentiment": label,
-                    "score": score,
-                })
-
-            avg = round(sum(scores) / len(scores), 4) if scores else 0.0
-            overall = "Positive" if avg > 0.1 else ("Negative" if avg < -0.1 else "Neutral")
-            results.append({
-                "ticker": ticker,
-                "avg_score": avg,
-                "label": overall,
-                "news_count": len(headlines),
-                "headlines": headlines,
-            })
-        except Exception as e:
-            log(f"  Sentiment {ticker}: {e}")
-    log(f"  Sentiment done: {len(results)} stocks")
-    return results
-
-
-# ---------------------------------------------------------------------------
-# STRATEGY 4: FinRL-INSPIRED SIGNALS
-# ---------------------------------------------------------------------------
-def finrl_signals(tickers: list[str]) -> list[dict]:
-    log("Running FinRL-inspired strategy analysis...")
-    results = []
-    for ticker in tickers:
-        try:
-            hist = yf.download(
-                ticker, period="6mo", interval="1d",
-                auto_adjust=True, progress=False, threads=False
-            )
-            hist = flatten_columns(hist)
-            if hist.empty or len(hist) < 30 or "Close" not in hist.columns:
-                continue
-            closes = hist["Close"].squeeze().dropna()
-            if isinstance(closes, pd.DataFrame):
-                closes = closes.iloc[:, 0]
-            returns = closes.pct_change().dropna()
-
-            # Features
-            x = np.arange(len(closes))
-            slope = float(np.polyfit(x, closes.values.flatten().astype(float), 1)[0])
-            momentum_20d = float((closes.iloc[-1] / closes.iloc[-20] - 1) * 100) if len(closes) >= 20 else None
-            momentum_5d = float((closes.iloc[-1] / closes.iloc[-5] - 1) * 100) if len(closes) >= 5 else None
-            volatility = float(returns.std() * np.sqrt(252))
-            avg_volume = safe_float(hist["Volume"].tail(20).mean()) if "Volume" in hist.columns else None
-
-            # RSI (14-day)
-            delta = closes.diff()
-            gain = delta.where(delta > 0, 0.0).rolling(14).mean()
-            loss_ = (-delta.where(delta < 0, 0.0)).rolling(14).mean()
-            rs = gain / loss_
-            rsi = 100 - (100 / (1 + rs))
-            current_rsi = safe_float(rsi.iloc[-1])
-
-            # Bollinger Bands
-            sma20 = closes.rolling(20).mean()
-            std20 = closes.rolling(20).std()
-            upper_bb = sma20 + 2 * std20
-            lower_bb = sma20 - 2 * std20
-            current_price = safe_float(closes.iloc[-1])
-            bb_upper = safe_float(upper_bb.iloc[-1])
-            bb_lower = safe_float(lower_bb.iloc[-1])
-            bb_position = None
-            if current_price and bb_upper and bb_lower and (bb_upper - bb_lower) > 0:
-                bb_position = round((current_price - bb_lower) / (bb_upper - bb_lower), 3)
-
-            # MACD
-            ema12 = closes.ewm(span=12, adjust=False).mean()
-            ema26 = closes.ewm(span=26, adjust=False).mean()
-            macd_line = ema12 - ema26
-            signal_line = macd_line.ewm(span=9, adjust=False).mean()
-            macd_hist = macd_line - signal_line
-            macd_val = safe_float(macd_hist.iloc[-1])
-
-            # Sharpe ratio (annualized, risk-free = 0)
-            sharpe = float(returns.mean() / returns.std() * np.sqrt(252)) if returns.std() > 0 else 0.0
-
-            # Composite Score & Signal
-            score = 0.0
-            reasons = []
-
-            if momentum_20d is not None:
-                if momentum_20d > 5:
-                    score += 2
-                    reasons.append("Strong 20d momentum")
-                elif momentum_20d > 0:
-                    score += 1
-                    reasons.append("Positive 20d momentum")
-                elif momentum_20d < -5:
-                    score -= 2
-                    reasons.append("Weak 20d momentum")
-                else:
-                    score -= 1
-
-            if slope > 0:
-                score += 1
-                reasons.append("Upward trend")
-            else:
-                score -= 1
-                reasons.append("Downward trend")
-
-            if volatility < 0.3:
-                score += 1
-                reasons.append("Low volatility")
-            elif volatility > 0.6:
-                score -= 1
-                reasons.append("High volatility")
-
-            if current_rsi is not None:
-                if current_rsi < 30:
-                    score += 1.5
-                    reasons.append("Oversold (RSI)")
-                elif current_rsi > 70:
-                    score -= 1.5
-                    reasons.append("Overbought (RSI)")
-
-            if bb_position is not None:
-                if bb_position < 0.2:
-                    score += 1
-                    reasons.append("Near lower BB")
-                elif bb_position > 0.8:
-                    score -= 1
-                    reasons.append("Near upper BB")
-
-            if macd_val is not None:
-                if macd_val > 0:
-                    score += 0.5
-                    reasons.append("MACD bullish")
-                else:
-                    score -= 0.5
-                    reasons.append("MACD bearish")
-
-            if sharpe > 1:
-                score += 1
-                reasons.append(f"Good Sharpe ({sharpe:.2f})")
-            elif sharpe < -0.5:
-                score -= 1
-
-            if score >= 3:
-                signal = "Strong Buy"
-                confidence = "High"
-            elif score >= 1:
-                signal = "Buy"
-                confidence = "Medium"
-            elif score <= -3:
-                signal = "Strong Sell"
-                confidence = "High"
-            elif score <= -1:
-                signal = "Sell"
-                confidence = "Medium"
-            else:
-                signal = "Hold"
-                confidence = "Low"
-
-            results.append({
-                "ticker": ticker,
-                "signal": signal,
-                "confidence": confidence,
-                "composite_score": round(score, 2),
-                "momentum_20d": round(momentum_20d, 2) if momentum_20d is not None else None,
-                "momentum_5d": round(momentum_5d, 2) if momentum_5d is not None else None,
-                "volatility": round(volatility, 4),
-                "rsi": round(current_rsi, 2) if current_rsi is not None else None,
-                "macd": round(macd_val, 4) if macd_val is not None else None,
-                "bb_position": bb_position,
-                "sharpe": round(sharpe, 3),
-                "slope": round(slope, 4),
-                "avg_volume": avg_volume,
-                "reasons": reasons[:5],
-            })
-        except Exception as e:
-            log(f"  FinRL {ticker}: {e}")
-    log(f"  FinRL analysis done: {len(results)} stocks")
-    return results
-
-
-# ---------------------------------------------------------------------------
-# STRATEGY 5: CORRELATION ANALYSIS
-# ---------------------------------------------------------------------------
-def correlation_analysis(tickers: list[str]) -> dict:
-    log("Running correlation analysis...")
-    # Download 3 months of daily closes for all tickers
-    valid_tickers = []
-    all_closes = {}
-    for ticker in tickers:
-        try:
-            hist = yf.download(
-                ticker, period="3mo", interval="1d",
-                auto_adjust=True, progress=False, threads=False
-            )
-            hist = flatten_columns(hist)
-            if hist.empty or "Close" not in hist.columns:
-                continue
-            closes = hist["Close"].squeeze().dropna()
-            if isinstance(closes, pd.DataFrame):
-                closes = closes.iloc[:, 0]
-            if len(closes) < 20:
-                continue
-            all_closes[ticker] = closes
-            valid_tickers.append(ticker)
-        except Exception:
-            pass
-
-    if len(valid_tickers) < 2:
-        log("  Not enough stocks for correlation")
-        return {"tickers": [], "matrix": [], "top_pairs": []}
-
-    # Build aligned dataframe
-    df = pd.DataFrame(all_closes)
-    df = df.dropna(axis=0, how="any")
-    returns_df = df.pct_change().dropna()
-
-    if len(returns_df) < 10:
-        return {"tickers": valid_tickers, "matrix": [], "top_pairs": []}
-
-    corr = returns_df.corr()
-
-    # Build matrix as list of lists
-    matrix = []
-    for t1 in valid_tickers:
-        row = []
-        for t2 in valid_tickers:
-            if t1 in corr.columns and t2 in corr.columns:
-                val = safe_float(corr.loc[t1, t2])
-                row.append(round(val, 3) if val is not None else None)
-            else:
-                row.append(None)
-        matrix.append(row)
-
-    # Top correlated / anti-correlated pairs
-    pairs = []
-    for i, t1 in enumerate(valid_tickers):
-        for j, t2 in enumerate(valid_tickers):
-            if j <= i:
-                continue
-            if t1 in corr.columns and t2 in corr.columns:
-                val = safe_float(corr.loc[t1, t2])
-                if val is not None:
-                    pairs.append({"pair": f"{t1} / {t2}", "correlation": round(val, 3)})
-
-    pairs.sort(key=lambda x: abs(x["correlation"]), reverse=True)
-    top_positive = [p for p in pairs if p["correlation"] > 0.5][:15]
-    top_negative = [p for p in pairs if p["correlation"] < -0.3][:15]
-
-    log(f"  Correlation done: {len(valid_tickers)} stocks, {len(pairs)} pairs")
-    return {
-        "tickers": valid_tickers,
-        "matrix": matrix,
-        "top_positive": top_positive,
-        "top_negative": top_negative,
-    }
-
-
-# ---------------------------------------------------------------------------
-# COMBINED SIGNAL
-# ---------------------------------------------------------------------------
-def compute_combined_signals(
-    prices: list[dict],
-    ma_results: list[dict],
-    sentiment_results: list[dict],
-    finrl_results: list[dict],
-) -> list[dict]:
-    log("Computing combined signals...")
-    ma_map = {r["ticker"]: r for r in ma_results}
-    sent_map = {r["ticker"]: r for r in sentiment_results}
-    finrl_map = {r["ticker"]: r for r in finrl_results}
-
-    combined = []
-    for p in prices:
-        ticker = p["ticker"]
-        score = 0.0
-
-        # MA signal
-        ma = ma_map.get(ticker)
-        if ma:
-            sig = ma.get("signal", "")
-            if "Golden Cross" in sig:
-                score += 3
-            elif "Bullish" in sig:
-                score += 1
-            elif "Death Cross" in sig:
-                score -= 3
-            elif "Bearish" in sig:
-                score -= 1
-
-        # Sentiment
-        sent = sent_map.get(ticker)
-        if sent:
-            avg = sent.get("avg_score", 0)
-            score += avg * 3  # scale sentiment contribution
-
-        # FinRL
-        finrl = finrl_map.get(ticker)
-        if finrl:
-            score += finrl.get("composite_score", 0) * 0.5
-
-        if score >= 3:
-            signal = "Strong Buy"
-        elif score >= 1:
-            signal = "Buy"
-        elif score <= -3:
-            signal = "Strong Sell"
-        elif score <= -1:
-            signal = "Sell"
-        else:
-            signal = "Hold"
-
-        combined.append({
-            "ticker": ticker,
-            "combined_score": round(score, 2),
-            "combined_signal": signal,
-            "ma_signal": ma["signal"] if ma else "N/A",
-            "sentiment_label": sent["label"] if sent else "N/A",
-            "sentiment_score": sent["avg_score"] if sent else 0,
-            "finrl_signal": finrl["signal"] if finrl else "N/A",
-            "finrl_score": finrl["composite_score"] if finrl else 0,
-            "price": p.get("price"),
-            "change_pct": p.get("change_pct"),
-        })
-
-    combined.sort(key=lambda x: x["combined_score"], reverse=True)
-    log(f"  Combined signals done: {len(combined)} stocks")
-    return combined
-
-
-# ---------------------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------------------
-def main():
-    log("=" * 60)
-    log("ML Stock Tracker - Analysis Pipeline")
-    log("=" * 60)
-
-    tickers = build_watchlist()
-    log(f"Watchlist: {len(tickers)} symbols")
-
-    # Run all strategies
-    prices = fetch_prices(tickers)
-    ma_results = ma_cross_analysis(tickers)
-    sentiment_results = sentiment_analysis(tickers)
-    finrl_results = finrl_signals(tickers)
-    correlation = correlation_analysis(tickers)
-    combined = compute_combined_signals(prices, ma_results, sentiment_results, finrl_results)
-
-    # Build output
     output = {
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "watchlist": tickers,
-        "prices": prices,
-        "ma_cross": ma_results,
-        "sentiment": sentiment_results,
-        "finrl": finrl_results,
-        "correlation": correlation,
-        "combined": combined,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "qqq_5d_ret":   round(qqq5d, 2),
+        "counts": {
+            "total": len(stocks), "tl": tl_c,
+            "buy": buy_c, "sell": sell_c, "hold": hold_c,
+        },
+        "stocks": stocks,
+        "correlation": {
+            "tickers":      avail,
+            "matrix":       corr_matrix,
+            "top_positive": top_pos,
+            "top_negative": top_neg,
+        },
     }
 
-    # Strip SMA history from ma_cross for the main JSON to keep size manageable
-    # (sma_history is embedded per-stock for chart rendering)
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(exist_ok=True)
     out_path = OUTPUT_DIR / "analysis.json"
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, default=str)
-    log(f"Output written to {out_path} ({out_path.stat().st_size:,} bytes)")
-    log("Done!")
+    out_path.write_text(json.dumps(output, indent=2))
+    print(f"Saved: {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    run()

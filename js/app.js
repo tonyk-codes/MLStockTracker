@@ -1,761 +1,481 @@
 /* ================================================================
-   ML Stock Tracker — Dark Theme Dashboard JS
+   Machine Learning Signal Platform — app.js
    ================================================================ */
 
-const DATA_URL = "data/analysis.json";
+const DATA_URL = 'data/analysis.json';
 
 let DATA = null;
-let smaChart = null;
-let signalChart = null;
-let sentimentChart = null;
-let rsiChart = null;
-let corrHeatmap = null;
+let currentFilter = 'ALL';
+let sortCol = null;
+let sortDir = 'desc';
+let portfolio = null;
 
-// Dark-theme Chart.js defaults
-const GRID_COLOR = "rgba(148,163,184,0.10)";
-const TICK_COLOR = "#94a3b8";
-const TITLE_COLOR = "#e2e8f0";
-const LEGEND_COLOR = "#cbd5e1";
-
-// ================================================================
-// INIT
-// ================================================================
-document.addEventListener("DOMContentLoaded", async () => {
-    // Chart.js global dark defaults
-    Chart.defaults.color = TICK_COLOR;
-    Chart.defaults.borderColor = GRID_COLOR;
-
+// ============================================================
+// Init
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
     setupTabs();
     setupFilters();
-    setupTiltCards();
-    setupParallax();
-    setupPanelGlow();
+    setupRunModal();
+    setupUpload();
     await loadData();
 });
 
-async function loadData() {
-    const overlay = document.getElementById("loading-overlay");
-    try {
-        const resp = await fetch(DATA_URL);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        DATA = await resp.json();
-        renderAll();
-    } catch (err) {
-        console.error("Failed to load data:", err);
-        overlay.innerHTML = `
-            <p style="color:#f87171;font-weight:600;">Failed to load analysis data.</p>
-            <p style="color:#94a3b8;font-size:13px;margin-top:8px;">
-                Run the GitHub Actions workflow first to generate data.<br>
-                Error: ${escapeHtml(err.message)}
-            </p>`;
-        return;
-    }
-    overlay.classList.add("hidden");
-}
-
-// ================================================================
-// TILT CARD EFFECT
-// ================================================================
-function setupTiltCards() {
-    document.querySelectorAll(".tilt-card").forEach(card => {
-        card.addEventListener("mousemove", (e) => {
-            const rect = card.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            const centerX = rect.width / 2;
-            const centerY = rect.height / 2;
-            const rotateX = ((y - centerY) / centerY) * -8;
-            const rotateY = ((x - centerX) / centerX) * 8;
-            card.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.03,1.03,1.03)`;
-
-            // Move glare
-            const glare = card.querySelector(".glare");
-            if (glare) {
-                const gx = (x / rect.width) * 100;
-                const gy = (y / rect.height) * 100;
-                glare.style.background = `radial-gradient(circle at ${gx}% ${gy}%, rgba(255,255,255,0.18) 0%, transparent 60%)`;
-                glare.style.opacity = "1";
-            }
-        });
-        card.addEventListener("mouseleave", () => {
-            card.style.transform = "perspective(800px) rotateX(0) rotateY(0) scale3d(1,1,1)";
-            const glare = card.querySelector(".glare");
-            if (glare) glare.style.opacity = "0";
-        });
-    });
-}
-
-// ================================================================
-// PARALLAX EFFECT
-// ================================================================
-function setupParallax() {
-    const hero = document.querySelector("[data-parallax]");
-    if (!hero) return;
-    window.addEventListener("scroll", () => {
-        const scrollY = window.scrollY;
-        const before = hero.querySelector("::before") || hero;
-        hero.style.setProperty("--parallax-y", `${scrollY * 0.3}px`);
-        // Move the ::before pseudo via a CSS variable
-        hero.style.backgroundPositionY = `${scrollY * 0.4}px`;
-    }, { passive: true });
-}
-
-// ================================================================
-// PANEL MOUSE-GLOW EFFECT
-// ================================================================
-function setupPanelGlow() {
-    document.querySelectorAll(".panel").forEach(panel => {
-        panel.addEventListener("mousemove", (e) => {
-            const rect = panel.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 100;
-            const y = ((e.clientY - rect.top) / rect.height) * 100;
-            panel.style.setProperty("--mouse-x", x + "%");
-            panel.style.setProperty("--mouse-y", y + "%");
-        });
-    });
-}
-
-// ================================================================
-// RENDER ALL
-// ================================================================
-function renderAll() {
-    renderMetrics();
-    renderCombinedTable();
-    renderSignalChart();
-    renderMATable();
-    renderSMAChart();
-    renderSentimentTable();
-    renderSentimentChart();
-    renderSentimentDetail();
-    renderFinRLTable();
-    renderFinRLDetail();
-    renderRSIChart();
-    renderCorrelation();
-    document.getElementById("last-updated").textContent = DATA.generated_at;
-}
-
-// ================================================================
-// TABS
-// ================================================================
+// ============================================================
+// Tabs
+// ============================================================
 function setupTabs() {
-    document.querySelectorAll(".nav-link").forEach(link => {
-        link.addEventListener("click", (e) => {
-            e.preventDefault();
-            const tab = link.dataset.tab;
-            document.querySelectorAll(".nav-link").forEach(l => l.classList.remove("active"));
-            link.classList.add("active");
-            document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
-            document.getElementById(`tab-${tab}`).classList.add("active");
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+            btn.classList.add('active');
+            document.getElementById('panel-' + tab).classList.remove('hidden');
+            if (tab === 'correlation' && DATA?.correlation) renderCorrelation(DATA.correlation);
         });
     });
 }
 
-// ================================================================
-// FILTERS
-// ================================================================
+// ============================================================
+// Data load
+// ============================================================
+async function loadData() {
+    try {
+        const res = await fetch(DATA_URL + '?t=' + Date.now());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (!data.stocks || !Array.isArray(data.stocks)) {
+            throw new Error('stale_schema');
+        }
+        DATA = data;
+        renderMeta(data);
+        renderSummary(data);
+        renderSignals(data.stocks, currentFilter, sortCol, sortDir);
+        if (portfolio) applyPortfolioSignals();
+    } catch (err) {
+        if (err.message === 'stale_schema') {
+            showMsg('Data schema outdated. Click "Run Analysis" to regenerate.');
+        } else {
+            showMsg('No analysis data found. Click "Run Analysis" to generate.');
+        }
+    }
+}
+
+function showMsg(text) {
+    const tbody = document.getElementById('signals-tbody');
+    if (tbody) tbody.innerHTML = `<tr class="loading-row"><td colspan="14">${text}</td></tr>`;
+}
+
+// ============================================================
+// Meta bar
+// ============================================================
+function renderMeta(data) {
+    const ts = data.generated_at ? new Date(data.generated_at) : null;
+    const genEl = document.getElementById('meta-generated');
+    if (genEl) genEl.textContent = ts
+        ? ts.toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})
+        : '--';
+    const qqq = data.qqq_5d_ret;
+    const el = document.getElementById('meta-qqq');
+    if (el && qqq != null) {
+        el.textContent = (qqq >= 0 ? '+' : '') + qqq.toFixed(2) + '%';
+        el.className = 'meta-value ' + (qqq >= 0 ? 'pos' : 'neg');
+    }
+}
+
+// ============================================================
+// Summary counts
+// ============================================================
+function renderSummary(data) {
+    const counts = data.counts || {};
+    const stocks = data.stocks || [];
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('cnt-total', counts.total ?? stocks.length);
+    set('cnt-buy',   counts.buy   ?? stocks.filter(s => s.signal === 'BUY').length);
+    set('cnt-sell',  counts.sell  ?? stocks.filter(s => s.signal === 'SELL').length);
+    set('cnt-hold',  counts.hold  ?? stocks.filter(s => s.signal === 'HOLD').length);
+    set('cnt-tl',    counts.tl    ?? stocks.filter(s => s.classification === 'TL').length);
+}
+
+// ============================================================
+// Filter + Sort setup
+// ============================================================
 function setupFilters() {
-    document.getElementById("search-input").addEventListener("input", applyFilters);
-    document.getElementById("signal-filter").addEventListener("change", applyFilters);
-    document.getElementById("sort-select").addEventListener("change", applyFilters);
-}
-
-function applyFilters() {
-    if (!DATA) return;
-    renderCombinedTable();
-}
-
-function getFilteredCombined() {
-    let items = [...(DATA.combined || [])];
-    const search = document.getElementById("search-input").value.trim().toUpperCase();
-    const signal = document.getElementById("signal-filter").value;
-    const sort = document.getElementById("sort-select").value;
-
-    if (search) {
-        items = items.filter(i => i.ticker.toUpperCase().includes(search));
-    }
-    if (signal !== "all") {
-        items = items.filter(i => i.combined_signal === signal);
-    }
-
-    switch (sort) {
-        case "score-desc": items.sort((a, b) => b.combined_score - a.combined_score); break;
-        case "score-asc": items.sort((a, b) => a.combined_score - b.combined_score); break;
-        case "change-desc": items.sort((a, b) => (b.change_pct || 0) - (a.change_pct || 0)); break;
-        case "change-asc": items.sort((a, b) => (a.change_pct || 0) - (b.change_pct || 0)); break;
-        case "ticker-asc": items.sort((a, b) => a.ticker.localeCompare(b.ticker)); break;
-    }
-    return items;
-}
-
-// ================================================================
-// METRICS
-// ================================================================
-function renderMetrics() {
-    const combined = DATA.combined || [];
-    const prices = DATA.prices || [];
-
-    document.getElementById("metric-total").textContent = combined.length;
-    document.getElementById("metric-buy").textContent =
-        combined.filter(c => c.combined_signal.includes("Buy")).length;
-    document.getElementById("metric-hold").textContent =
-        combined.filter(c => c.combined_signal === "Hold").length;
-    document.getElementById("metric-sell").textContent =
-        combined.filter(c => c.combined_signal.includes("Sell")).length;
-
-    const changes = prices.map(p => p.change_pct).filter(v => v != null);
-    if (changes.length) {
-        const avg = changes.reduce((s, v) => s + v, 0) / changes.length;
-        const el = document.getElementById("metric-avg-change");
-        el.textContent = fmtPct(avg);
-        el.className = `metric-value ${avg >= 0 ? "positive" : "negative"}`;
-    }
-
-    if (prices.length) {
-        const best = prices.reduce((a, b) => (b.change_pct || -Infinity) > (a.change_pct || -Infinity) ? b : a);
-        document.getElementById("metric-best").textContent =
-            `${best.ticker} ${fmtPct(best.change_pct)}`;
-    }
-}
-
-// ================================================================
-// COMBINED TABLE
-// ================================================================
-function renderCombinedTable() {
-    const tbody = document.getElementById("combined-tbody");
-    const items = getFilteredCombined();
-    tbody.innerHTML = items.map(item => `
-        <tr>
-            <td>${tickerLink(item.ticker)}</td>
-            <td>${item.price != null ? "$" + fmtNum(item.price) : "—"}</td>
-            <td class="${changeClass(item.change_pct)}">${fmtPct(item.change_pct)}</td>
-            <td>${signalBadge(item.combined_signal)}</td>
-            <td>${scoreDisplay(item.combined_score)}</td>
-            <td>${maBadge(item.ma_signal)}</td>
-            <td>${sentimentBadge(item.sentiment_label)} <small class="text-neutral">${fmtScore(item.sentiment_score)}</small></td>
-            <td>${signalBadge(item.finrl_signal)}</td>
-        </tr>
-    `).join("");
-}
-
-// ================================================================
-// SIGNAL DISTRIBUTION CHART
-// ================================================================
-function renderSignalChart() {
-    const combined = DATA.combined || [];
-    const counts = {};
-    combined.forEach(c => {
-        counts[c.combined_signal] = (counts[c.combined_signal] || 0) + 1;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = btn.dataset.filter;
+            if (DATA) renderSignals(DATA.stocks, currentFilter, sortCol, sortDir);
+        });
     });
-
-    const labels = Object.keys(counts);
-    const values = Object.values(counts);
-    const colors = labels.map(signalColor);
-
-    const ctx = document.getElementById("signal-chart").getContext("2d");
-    if (signalChart) signalChart.destroy();
-    signalChart = new Chart(ctx, {
-        type: "doughnut",
-        data: {
-            labels,
-            datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#151c2c" }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: "bottom", labels: { font: { size: 12 }, color: LEGEND_COLOR } }
-            }
-        }
+    document.querySelectorAll('#signals-table th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+            else { sortCol = col; sortDir = 'desc'; }
+            document.querySelectorAll('#signals-table th').forEach(h => h.classList.remove('sort-asc','sort-desc'));
+            th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+            if (DATA) renderSignals(DATA.stocks, currentFilter, sortCol, sortDir);
+        });
     });
 }
 
-// ================================================================
-// MA CROSS TABLE
-// ================================================================
-function renderMATable() {
-    const tbody = document.getElementById("ma-tbody");
-    const items = DATA.ma_cross || [];
-    tbody.innerHTML = items.map(item => `
-        <tr>
-            <td>${tickerLink(item.ticker)}</td>
-            <td>${maBadge(item.signal)}</td>
-            <td>${item.sma50 != null ? "$" + fmtNum(item.sma50) : "—"}</td>
-            <td>${item.sma200 != null ? "$" + fmtNum(item.sma200) : "—"}</td>
-        </tr>
-    `).join("");
+// ============================================================
+// Signal Table render
+// ============================================================
+function renderSignals(stocks, filter, col, dir) {
+    let rows = stocks.slice();
+    if (filter === 'BUY')  rows = rows.filter(s => s.signal === 'BUY');
+    else if (filter === 'SELL') rows = rows.filter(s => s.signal === 'SELL');
+    else if (filter === 'HOLD') rows = rows.filter(s => s.signal === 'HOLD');
+    else if (filter === 'TL')   rows = rows.filter(s => s.classification === 'TL');
 
-    // Populate SMA chart dropdown
-    const sel = document.getElementById("sma-chart-ticker");
-    sel.innerHTML = items.map(i => `<option value="${escapeHtml(i.ticker)}">${escapeHtml(i.ticker)}</option>`).join("");
-    sel.addEventListener("change", () => renderSMAChart());
-}
+    if (col) {
+        rows.sort((a, b) => {
+            let va = a[col], vb = b[col];
+            if (typeof va === 'string') va = va.toLowerCase();
+            if (typeof vb === 'string') vb = vb.toLowerCase();
+            if (va == null) va = dir === 'asc' ? Infinity : -Infinity;
+            if (vb == null) vb = dir === 'asc' ? Infinity : -Infinity;
+            return dir === 'asc' ? (va > vb ? 1 : va < vb ? -1 : 0) : (va < vb ? 1 : va > vb ? -1 : 0);
+        });
+    }
 
-// ================================================================
-// SMA CHART
-// ================================================================
-function renderSMAChart() {
-    const ticker = document.getElementById("sma-chart-ticker").value;
-    const item = (DATA.ma_cross || []).find(i => i.ticker === ticker);
-    if (!item || !item.sma_history || !item.sma_history.length) return;
-
-    const hist = item.sma_history;
-    const labels = hist.map(h => h.date);
-    const datasets = [
-        {
-            label: "Close",
-            data: hist.map(h => h.close),
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59,130,246,0.08)",
-            fill: true,
-            tension: 0.3,
-            pointRadius: 0,
-            borderWidth: 2,
-        },
-        {
-            label: "SMA 50",
-            data: hist.map(h => h.sma50),
-            borderColor: "#fbbf24",
-            borderDash: [5, 3],
-            fill: false,
-            tension: 0.3,
-            pointRadius: 0,
-            borderWidth: 2,
-        },
-        {
-            label: "SMA 200",
-            data: hist.map(h => h.sma200),
-            borderColor: "#f87171",
-            borderDash: [8, 4],
-            fill: false,
-            tension: 0.3,
-            pointRadius: 0,
-            borderWidth: 2,
-        },
-    ];
-
-    const ctx = document.getElementById("sma-chart").getContext("2d");
-    if (smaChart) smaChart.destroy();
-    smaChart = new Chart(ctx, {
-        type: "line",
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-                legend: { position: "top", labels: { font: { size: 12 }, color: LEGEND_COLOR } },
-                title: { display: true, text: `${ticker} — Price & Moving Averages`, font: { size: 14 }, color: TITLE_COLOR }
-            },
-            scales: {
-                x: { ticks: { maxTicksLimit: 12, font: { size: 11 }, color: TICK_COLOR }, grid: { color: GRID_COLOR } },
-                y: { ticks: { font: { size: 11 }, color: TICK_COLOR }, grid: { color: GRID_COLOR } }
-            }
-        }
-    });
-}
-
-// ================================================================
-// SENTIMENT TABLE
-// ================================================================
-function renderSentimentTable() {
-    const tbody = document.getElementById("sentiment-tbody");
-    const items = DATA.sentiment || [];
-    tbody.innerHTML = items.map(item => `
-        <tr>
-            <td>${tickerLink(item.ticker)}</td>
-            <td>${sentimentBadge(item.label)}</td>
-            <td class="${item.avg_score > 0 ? 'text-positive' : item.avg_score < 0 ? 'text-negative' : 'text-neutral'}">${fmtScore(item.avg_score)}</td>
-            <td>${item.news_count}</td>
-        </tr>
-    `).join("");
-
-    // Populate sentiment detail dropdown
-    const sel = document.getElementById("sentiment-detail-ticker");
-    sel.innerHTML = items
-        .filter(i => i.news_count > 0)
-        .map(i => `<option value="${escapeHtml(i.ticker)}">${escapeHtml(i.ticker)}</option>`)
-        .join("");
-    sel.addEventListener("change", () => renderSentimentDetail());
-}
-
-// ================================================================
-// SENTIMENT DIST CHART
-// ================================================================
-function renderSentimentChart() {
-    const items = DATA.sentiment || [];
-    const counts = { Positive: 0, Neutral: 0, Negative: 0, "No News": 0 };
-    items.forEach(i => { counts[i.label] = (counts[i.label] || 0) + 1; });
-
-    const labels = Object.keys(counts).filter(k => counts[k] > 0);
-    const values = labels.map(l => counts[l]);
-    const colors = labels.map(l => {
-        if (l === "Positive") return "#34d399";
-        if (l === "Negative") return "#f87171";
-        if (l === "No News") return "#475569";
-        return "#a78bfa";
-    });
-
-    const ctx = document.getElementById("sentiment-chart").getContext("2d");
-    if (sentimentChart) sentimentChart.destroy();
-    sentimentChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-            labels,
-            datasets: [{ data: values, backgroundColor: colors, borderRadius: 6 }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                y: { beginAtZero: true, ticks: { stepSize: 1, color: TICK_COLOR }, grid: { color: GRID_COLOR } },
-                x: { ticks: { color: TICK_COLOR }, grid: { color: GRID_COLOR } }
-            }
-        }
-    });
-}
-
-// ================================================================
-// SENTIMENT DETAIL (headlines)
-// ================================================================
-function renderSentimentDetail() {
-    const ticker = document.getElementById("sentiment-detail-ticker").value;
-    const item = (DATA.sentiment || []).find(i => i.ticker === ticker);
-    const tbody = document.getElementById("headlines-tbody");
-    if (!item || !item.headlines || !item.headlines.length) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#6b7280;">No headlines</td></tr>`;
+    const tbody = document.getElementById('signals-tbody');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr class="loading-row"><td colspan="14">No signals match the current filter.</td></tr>';
         return;
     }
-    tbody.innerHTML = item.headlines.map(h => `
-        <tr>
-            <td>${escapeHtml(h.date)}</td>
-            <td>${escapeHtml(h.title)}</td>
-            <td>${escapeHtml(h.publisher)}</td>
-            <td>${sentimentBadge(h.sentiment)}</td>
-            <td class="${h.score > 0 ? 'text-positive' : h.score < 0 ? 'text-negative' : 'text-neutral'}">${fmtScore(h.score)}</td>
-        </tr>
-    `).join("");
+    tbody.innerHTML = rows.map(buildRow).join('');
 }
 
-// ================================================================
-// FINRL TABLE
-// ================================================================
-function renderFinRLTable() {
-    const tbody = document.getElementById("finrl-tbody");
-    const items = DATA.finrl || [];
-    tbody.innerHTML = items.map(item => `
-        <tr>
-            <td>${tickerLink(item.ticker)}</td>
-            <td>${signalBadge(item.signal)}</td>
-            <td>${escapeHtml(item.confidence)}</td>
-            <td>${scoreDisplay(item.composite_score)}</td>
-            <td class="${changeClass(item.momentum_20d)}">${item.momentum_20d != null ? fmtPct(item.momentum_20d) : "—"}</td>
-            <td>${item.rsi != null ? item.rsi.toFixed(1) : "—"}</td>
-            <td>${item.macd != null ? item.macd.toFixed(4) : "—"}</td>
-            <td>${item.volatility != null ? item.volatility.toFixed(3) : "—"}</td>
-            <td>${item.sharpe != null ? item.sharpe.toFixed(2) : "—"}</td>
-        </tr>
-    `).join("");
+function buildRow(s) {
+    const sig = s.signal || 'HOLD';
+    const cls = s.classification || 'N';
+    const sigCls = sig === 'BUY' ? 'sig-buy' : sig === 'SELL' ? 'sig-sell' : 'sig-hold';
+    const clsCls = cls === 'TL' ? 'cls-tl' : 'cls-n';
 
-    // Populate detail dropdown
-    const sel = document.getElementById("finrl-detail-ticker");
-    sel.innerHTML = items.map(i => `<option value="${escapeHtml(i.ticker)}">${escapeHtml(i.ticker)}</option>`).join("");
-    sel.addEventListener("change", () => renderFinRLDetail());
-}
+    const fmt  = (v, d=2) => v == null ? '--' : (+v).toFixed(d);
+    const pct  = v => v == null ? '--' : (v >= 0 ? '+' : '') + (+v).toFixed(2) + '%';
+    const cpct = v => {
+        if (v == null) return '<span style="color:var(--text-faint)">--</span>';
+        const c = v > 0.5 ? 'pos' : v < -0.5 ? 'neg' : '';
+        return `<span class="${c}">${pct(v)}</span>`;
+    };
+    const rsi = v => {
+        if (v == null) return '--';
+        const c = v >= 70 ? 'rsi-ob' : v <= 30 ? 'rsi-os' : 'rsi-mid';
+        return `<span class="${c}">${(+v).toFixed(1)}</span>`;
+    };
 
-// ================================================================
-// FINRL DETAIL (reasons)
-// ================================================================
-function renderFinRLDetail() {
-    const ticker = document.getElementById("finrl-detail-ticker").value;
-    const item = (DATA.finrl || []).find(i => i.ticker === ticker);
-    const container = document.getElementById("finrl-reasons");
-    if (!item || !item.reasons || !item.reasons.length) {
-        container.innerHTML = `<p class="text-neutral">No reasoning available</p>`;
-        return;
-    }
-    container.innerHTML = `
-        <div style="margin-bottom:12px;">
-            <strong>${escapeHtml(item.ticker)}</strong> — 
-            ${signalBadge(item.signal)} 
-            <span class="text-neutral">(${escapeHtml(item.confidence)} confidence, score: ${item.composite_score})</span>
-        </div>
-        ${item.reasons.map(r => `
-            <div class="reason-item">
-                <span class="reason-bullet"></span>
-                <span>${escapeHtml(r)}</span>
-            </div>
-        `).join("")}
-    `;
-}
-
-// ================================================================
-// RSI CHART
-// ================================================================
-function renderRSIChart() {
-    const items = (DATA.finrl || []).filter(i => i.rsi != null);
-    items.sort((a, b) => a.rsi - b.rsi);
-
-    const labels = items.map(i => i.ticker);
-    const values = items.map(i => i.rsi);
-    const colors = values.map(v => {
-        if (v < 30) return "#34d399";
-        if (v > 70) return "#f87171";
-        return "#a78bfa";
-    });
-
-    const ctx = document.getElementById("rsi-chart").getContext("2d");
-    if (rsiChart) rsiChart.destroy();
-    rsiChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-            labels,
-            datasets: [{ data: values, backgroundColor: colors, borderRadius: 4 }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: "y",
-            plugins: {
-                legend: { display: false },
-                annotation: {}
-            },
-            scales: {
-                x: {
-                    min: 0, max: 100,
-                    ticks: { font: { size: 11 }, color: TICK_COLOR },
-                    grid: { color: GRID_COLOR }
-                },
-                y: {
-                    ticks: { font: { size: 10 }, color: TICK_COLOR },
-                    grid: { color: GRID_COLOR }
-                }
-            }
-        }
-    });
-}
-
-// ================================================================
-// CORRELATION
-// ================================================================
-function renderCorrelation() {
-    const corr = DATA.correlation || {};
-
-    // Top positive correlations table
-    const posBody = document.getElementById("corr-pos-tbody");
-    const posPairs = corr.top_positive || [];
-    posBody.innerHTML = posPairs.length
-        ? posPairs.map(p => `
-            <tr>
-                <td>${escapeHtml(p.pair)}</td>
-                <td><span class="text-positive">${p.correlation.toFixed(3)}</span></td>
-            </tr>
-        `).join("")
-        : `<tr><td colspan="2" class="text-neutral">No strongly correlated pairs</td></tr>`;
-
-    // Top negative correlations table
-    const negBody = document.getElementById("corr-neg-tbody");
-    const negPairs = corr.top_negative || [];
-    negBody.innerHTML = negPairs.length
-        ? negPairs.map(p => `
-            <tr>
-                <td>${escapeHtml(p.pair)}</td>
-                <td><span class="text-negative">${p.correlation.toFixed(3)}</span></td>
-            </tr>
-        `).join("")
-        : `<tr><td colspan="2" class="text-neutral">No inversely correlated pairs</td></tr>`;
-
-    // Heatmap
-    renderCorrHeatmap(corr);
-}
-
-function renderCorrHeatmap(corr) {
-    const tickers = corr.tickers || [];
-    const matrix = corr.matrix || [];
-    if (!tickers.length || !matrix.length) return;
-
-    // Build dataset for scatter-style heatmap
-    const dataPoints = [];
-    for (let i = 0; i < tickers.length; i++) {
-        for (let j = 0; j < tickers.length; j++) {
-            const val = matrix[i] && matrix[i][j] != null ? matrix[i][j] : 0;
-            dataPoints.push({ x: j, y: i, v: val });
+    let pnlTag = '';
+    if (portfolio && portfolio[s.ticker]) {
+        const ph = portfolio[s.ticker];
+        if (s.price && ph.avgCost) {
+            const pnlPct = (s.price - ph.avgCost) / ph.avgCost * 100;
+            const isPnlSell = (cls === 'TL' && pnlPct >= 25 && (s.rsi14||0) >= 75) ||
+                               (cls === 'N'  && pnlPct >= 12 && (s.rsi14||0) > 65);
+            pnlTag = ` <span class="${isPnlSell ? 'sig-sell' : pnlPct >= 0 ? 'pos' : 'neg'}" style="font-size:10px">${isPnlSell ? '[PNL-SELL]' : (pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%'}</span>`;
         }
     }
 
-    const ctx = document.getElementById("corr-heatmap").getContext("2d");
-    if (corrHeatmap) corrHeatmap.destroy();
+    return `<tr>
+        <td class="col-ticker" style="font-family:var(--mono);font-weight:700">${s.ticker}${pnlTag}</td>
+        <td class="col-name" style="color:var(--text-dim);font-size:11px">${s.name||''}</td>
+        <td class="col-signal"><span class="${sigCls}">${sig}</span></td>
+        <td class="col-cls"><span class="${clsCls}">${cls}</span></td>
+        <td style="font-family:var(--mono)">${fmt(s.price)}</td>
+        <td>${cpct(s.change_1d)}</td>
+        <td>${cpct(s.dist_ma20_pct)}</td>
+        <td>${cpct(s.dist_ma50_pct)}</td>
+        <td style="font-family:var(--mono)">${rsi(s.rsi14)}</td>
+        <td>${cpct(s.ret5d)}</td>
+        <td>${cpct(s.ret20d)}</td>
+        <td>${cpct(s.ret60d)}</td>
+        <td>${cpct(s.ret120d)}</td>
+        <td class="col-reason">${s.reason||''}</td>
+    </tr>`;
+}
 
-    // Use a simple bubble chart approach for the heatmap
-    corrHeatmap = new Chart(ctx, {
-        type: "scatter",
-        data: {
-            datasets: [{
-                data: dataPoints.map(p => ({ x: p.x, y: p.y })),
-                backgroundColor: dataPoints.map(p => corrColor(p.v)),
-                pointRadius: Math.max(4, Math.min(16, 200 / tickers.length)),
-                pointStyle: "rect",
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const idx = context.dataIndex;
-                            const p = dataPoints[idx];
-                            return `${tickers[p.y]} / ${tickers[p.x]}: ${p.v.toFixed(3)}`;
-                        }
-                    },
-                    backgroundColor: "#1e293b",
-                    titleColor: "#e2e8f0",
-                    bodyColor: "#cbd5e1",
-                    borderColor: "#334155",
-                    borderWidth: 1,
-                }
-            },
-            scales: {
-                x: {
-                    type: "linear",
-                    min: -0.5,
-                    max: tickers.length - 0.5,
-                    ticks: {
-                        stepSize: 1,
-                        callback: (val) => tickers[val] || "",
-                        font: { size: 9 },
-                        maxRotation: 90,
-                        minRotation: 45,
-                        color: TICK_COLOR,
-                    },
-                    grid: { color: GRID_COLOR }
-                },
-                y: {
-                    type: "linear",
-                    min: -0.5,
-                    max: tickers.length - 0.5,
-                    reverse: true,
-                    ticks: {
-                        stepSize: 1,
-                        callback: (val) => tickers[val] || "",
-                        font: { size: 9 },
-                        color: TICK_COLOR,
-                    },
-                    grid: { color: GRID_COLOR }
-                }
-            }
-        }
+// ============================================================
+// Portfolio Upload
+// ============================================================
+function setupUpload() {
+    const input = document.getElementById('portfolio-upload');
+    if (!input) return;
+    input.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        parsePortfolio(file);
+        input.value = '';
+    });
+    document.getElementById('portfolio-close')?.addEventListener('click', () => {
+        portfolio = null;
+        document.getElementById('portfolio-panel').classList.add('hidden');
+        document.getElementById('portfolio-tbody').innerHTML = '';
+        if (DATA) renderSignals(DATA.stocks, currentFilter, sortCol, sortDir);
     });
 }
 
-function corrColor(val) {
-    if (val == null) return "rgba(71,85,105,0.3)";
-    if (val > 0) {
-        const intensity = Math.min(val, 1);
-        return `rgba(59, 130, 246, ${0.15 + intensity * 0.75})`;
+function parsePortfolio(file) {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.csv')) {
+        const reader = new FileReader();
+        reader.onload = e => parseCSV(e.target.result);
+        reader.readAsText(file);
     } else {
-        const intensity = Math.min(Math.abs(val), 1);
-        return `rgba(248, 113, 113, ${0.15 + intensity * 0.75})`;
+        const reader = new FileReader();
+        reader.onload = e => {
+            if (typeof XLSX === 'undefined') {
+                showToast('XLSX library not loaded. Try again in a moment.');
+                return;
+            }
+            const wb = XLSX.read(e.target.result, {type:'array'});
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, {header:1});
+            processPortfolioRows(rows);
+        };
+        reader.readAsArrayBuffer(file);
     }
 }
 
-// ================================================================
-// HELPERS
-// ================================================================
-function escapeHtml(str) {
-    if (str == null) return "";
-    const div = document.createElement("div");
-    div.textContent = String(str);
-    return div.innerHTML;
+function parseCSV(text) {
+    const lines = text.trim().split('\n').map(l =>
+        l.split(',').map(c => c.trim().replace(/^"|"$/g,''))
+    );
+    processPortfolioRows(lines);
 }
 
-function tickerLink(ticker) {
-    const encoded = encodeURIComponent(ticker);
-    return `<a href="https://finance.yahoo.com/quote/${encoded}" target="_blank" rel="noopener" class="ticker-link">${escapeHtml(ticker)}</a>`;
+function processPortfolioRows(rows) {
+    if (rows.length < 2) { showToast('Portfolio file is empty or invalid.'); return; }
+    const header = rows[0].map(h => String(h).toLowerCase().trim());
+    const col = (keys) => header.findIndex(h => keys.some(k => h.includes(k)));
+
+    const ti = col(['ticker','symbol','code','stock']);
+    const si = col(['shares','quantity','qty','units']);
+    const ci = col(['avgcost','avg cost','average cost','cost','price paid','purchase price','avg price']);
+
+    if (ti < 0) { showToast('Could not find ticker/symbol column.'); return; }
+
+    const map = {};
+    const tableRows = [];
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const ticker = String(row[ti]||'').trim().toUpperCase();
+        if (!ticker) continue;
+        const shares  = si >= 0 ? parseFloat(row[si]) || 0 : 0;
+        const avgCost = ci >= 0 ? parseFloat(row[ci]) || 0 : 0;
+        map[ticker] = { shares, avgCost };
+        tableRows.push({ ticker, shares, avgCost });
+    }
+
+    portfolio = map;
+    renderPortfolioTable(tableRows);
+    if (DATA) renderSignals(DATA.stocks, currentFilter, sortCol, sortDir);
+    showToast('Portfolio loaded: ' + tableRows.length + ' position' + (tableRows.length !== 1 ? 's' : ''));
 }
 
-function fmtNum(val) {
-    if (val == null) return "—";
-    return Number(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function applyPortfolioSignals() {
+    if (DATA) renderSignals(DATA.stocks, currentFilter, sortCol, sortDir);
 }
 
-function fmtPct(val) {
-    if (val == null) return "—";
-    const prefix = val >= 0 ? "+" : "";
-    return `${prefix}${val.toFixed(2)}%`;
+function renderPortfolioTable(rows) {
+    document.getElementById('portfolio-panel').classList.remove('hidden');
+    const tbody = document.getElementById('portfolio-tbody');
+    tbody.innerHTML = rows.map(r => {
+        const stock = DATA?.stocks?.find(s => s.ticker === r.ticker);
+        const price = stock?.price;
+        const cls   = stock?.classification || 'N';
+        const pnlPct = (price && r.avgCost) ? ((price - r.avgCost) / r.avgCost * 100) : null;
+        const mktVal = (price && r.shares) ? price * r.shares : null;
+        const isPnlSell = pnlPct != null && (
+            (cls === 'TL' && pnlPct >= 25 && (stock?.rsi14||0) >= 75) ||
+            (cls === 'N'  && pnlPct >= 12 && (stock?.rsi14||0) > 65)
+        );
+        const sigStr = stock?.signal || '--';
+        const sigCls = sigStr === 'BUY' ? 'sig-buy' : sigStr === 'SELL' ? 'sig-sell' : sigStr === 'HOLD' ? 'sig-hold' : '';
+        const pnlCls = isPnlSell ? 'sig-sell' : pnlPct == null ? '' : pnlPct >= 0 ? 'pos' : 'neg';
+        const pnlStr = pnlPct == null ? '--' : (isPnlSell ? '[SELL] ' : '') + (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%';
+        const mktStr = mktVal == null ? '--' : '$' + Math.round(mktVal).toLocaleString();
+
+        return `<tr>
+            <td style="font-family:var(--mono);font-weight:700">${r.ticker}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.shares||'--'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.avgCost ? '$'+r.avgCost.toFixed(2) : '--'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${price ? '$'+price.toFixed(2) : '--'}</td>
+            <td style="text-align:right"><span class="${pnlCls}">${pnlStr}</span></td>
+            <td style="text-align:right;font-family:var(--mono)">${mktStr}</td>
+            <td style="text-align:right"><span class="${sigCls}">${sigStr}</span></td>
+        </tr>`;
+    }).join('');
 }
 
-function fmtScore(val) {
-    if (val == null) return "—";
-    const prefix = val >= 0 ? "+" : "";
-    return `${prefix}${Number(val).toFixed(3)}`;
+// ============================================================
+// Run Analysis Modal
+// ============================================================
+function setupRunModal() {
+    const openBtn  = document.getElementById('btn-run');
+    const modal    = document.getElementById('run-modal');
+    const closeBtn = document.getElementById('modal-close');
+    const submitBtn= document.getElementById('modal-submit');
+
+    const cancelBtn = document.getElementById('modal-cancel');
+    openBtn?.addEventListener('click',   () => modal?.classList.remove('hidden'));
+    closeBtn?.addEventListener('click',  () => modal?.classList.add('hidden'));
+    cancelBtn?.addEventListener('click', () => modal?.classList.add('hidden'));
+    modal?.addEventListener('click', e => { if (e.target === modal) modal.classList.add('hidden'); });
+    submitBtn?.addEventListener('click', async () => {
+        const pat = document.getElementById('run-token')?.value.trim();
+        if (!pat) { setRunStatus('Enter a GitHub Personal Access Token.', 'err'); return; }
+        await triggerAnalysis(pat);
+    });
 }
 
-function changeClass(val) {
-    if (val == null) return "text-neutral";
-    return val >= 0 ? "text-positive" : "text-negative";
+function setRunStatus(msg, type) {
+    const el = document.getElementById('run-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'run-status ' + (type || 'info');
+    el.classList.remove('hidden');
 }
 
-function signalBadge(signal) {
-    if (!signal) return `<span class="badge badge-neutral">N/A</span>`;
-    const cls = signalBadgeClass(signal);
-    return `<span class="badge ${cls}">${escapeHtml(signal)}</span>`;
+async function triggerAnalysis(pat) {
+    let owner = '', repo = '';
+    const host = window.location.hostname;
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (host.endsWith('.github.io')) {
+        owner = host.replace('.github.io', '');
+        repo  = parts[0] || '';
+    }
+    if (!owner || !repo) {
+        owner = prompt('GitHub username / organization:') || '';
+        repo  = prompt('Repository name:') || '';
+    }
+    if (!owner || !repo) { setRunStatus('Could not determine repository.', 'err'); return; }
+
+    setRunStatus('Dispatching workflow...', 'info');
+    try {
+        const res = await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/actions/workflows/analyze.yml/dispatches`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${pat}`,
+                    'Accept': 'application/vnd.github+json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ref: 'main' })
+            }
+        );
+        if (res.status === 204) {
+            setRunStatus('Workflow dispatched. Analysis will complete in ~2 minutes.', 'ok');
+            showToast('Analysis workflow triggered successfully.');
+        } else {
+            const txt = await res.text();
+            setRunStatus('API error ' + res.status + ': ' + txt.slice(0, 120), 'err');
+        }
+    } catch (err) {
+        setRunStatus('Network error: ' + err.message, 'err');
+    }
 }
 
-function signalBadgeClass(signal) {
-    const s = (signal || "").toLowerCase();
-    if (s === "strong buy") return "badge-strong-buy";
-    if (s === "buy") return "badge-buy";
-    if (s === "hold") return "badge-hold";
-    if (s === "sell") return "badge-sell";
-    if (s === "strong sell") return "badge-strong-sell";
-    return "badge-neutral";
+// ============================================================
+// Correlation Heatmap
+// ============================================================
+function renderCorrelation(corr) {
+    if (!corr || !corr.tickers || !corr.matrix) {
+        showMsg('No correlation data. Run analysis first.');
+        return;
+    }
+    drawHeatmap(corr.tickers, corr.matrix);
+    renderCorrTable('corr-pos-tbody', corr.top_positive, true);
+    renderCorrTable('corr-neg-tbody', corr.top_negative, false);
 }
 
-function maBadge(signal) {
-    if (!signal) return `<span class="badge badge-neutral">N/A</span>`;
-    const s = signal.toLowerCase();
-    let cls = "badge-neutral";
-    if (s.includes("golden")) cls = "badge-golden";
-    else if (s.includes("death")) cls = "badge-death";
-    else if (s.includes("bullish")) cls = "badge-bullish";
-    else if (s.includes("bearish")) cls = "badge-bearish";
-    else if (s.includes("insufficient")) cls = "badge-insufficient";
-    return `<span class="badge ${cls}">${escapeHtml(signal)}</span>`;
+function drawHeatmap(tickers, matrix) {
+    const n = tickers.length;
+    const CELL  = 22;
+    const LABEL = 54;
+    const W = LABEL + n * CELL;
+    const H = LABEL + n * CELL;
+
+    const canvas = document.getElementById('corr-canvas');
+    if (!canvas) return;
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, W, H);
+
+    for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+            const val = (matrix[tickers[i]] && matrix[tickers[i]][tickers[j]] != null)
+                ? matrix[tickers[i]][tickers[j]] : 0;
+            ctx.fillStyle = heatColor(val);
+            ctx.fillRect(LABEL + j * CELL, LABEL + i * CELL, CELL - 1, CELL - 1);
+        }
+    }
+
+    ctx.font = 'bold 8.5px JetBrains Mono, monospace';
+    ctx.fillStyle = '#7d8fa8';
+
+    // Row labels
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < n; i++) {
+        ctx.fillText(tickers[i], LABEL - 5, LABEL + i * CELL + CELL / 2);
+    }
+    // Column labels (rotated)
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (let j = 0; j < n; j++) {
+        ctx.save();
+        ctx.translate(LABEL + j * CELL + CELL / 2, LABEL - 5);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(tickers[j], 0, 0);
+        ctx.restore();
+    }
 }
 
-function sentimentBadge(label) {
-    if (!label) return `<span class="badge badge-neutral">N/A</span>`;
-    const l = label.toLowerCase();
-    let cls = "badge-neutral";
-    if (l === "positive") cls = "badge-positive";
-    else if (l === "negative") cls = "badge-negative";
-    return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+function heatColor(v) {
+    const a = Math.min(1, Math.abs(v));
+    if (v >= 0) {
+        const g = Math.round(63 + 122 * a);
+        return `rgba(0,${g},0,${0.2 + a * 0.65})`;
+    } else {
+        const r = Math.round(100 + 148 * a);
+        return `rgba(${r},0,0,${0.2 + a * 0.65})`;
+    }
 }
 
-function signalColor(signal) {
-    const s = (signal || "").toLowerCase();
-    if (s === "strong buy") return "#059669";
-    if (s === "buy") return "#34d399";
-    if (s === "hold") return "#a78bfa";
-    if (s === "sell") return "#f87171";
-    if (s === "strong sell") return "#dc2626";
-    return "#64748b";
+function renderCorrTable(tbodyId, pairs, positive) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    if (!pairs || !pairs.length) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-faint);padding:12px;font-size:11px">No data available</td></tr>';
+        return;
+    }
+    tbody.innerHTML = pairs.slice(0, 20).map(([t1, t2, v]) =>
+        `<tr>
+            <td style="font-family:var(--mono);font-weight:700">${t1}</td>
+            <td style="font-family:var(--mono);font-weight:700">${t2}</td>
+            <td style="text-align:right"><span class="${positive?'pos':'neg'}">${(+v).toFixed(3)}</span></td>
+        </tr>`
+    ).join('');
 }
 
-function scoreDisplay(score) {
-    if (score == null) return "—";
-    const color = score > 0 ? "#34d399" : score < 0 ? "#f87171" : "#a78bfa";
-    const maxScore = 10;
-    const pct = Math.min(Math.abs(score) / maxScore * 100, 100);
-    return `
-        <div class="score-bar">
-            <span style="color:${color};font-weight:600;min-width:32px;">${score > 0 ? "+" : ""}${score.toFixed(1)}</span>
-            <div class="score-bar-track">
-                <div class="score-bar-fill" style="width:${pct}%;background:${color};"></div>
-            </div>
-        </div>
-    `;
+// ============================================================
+// Toast
+// ============================================================
+let _toastTimer = null;
+function showToast(msg) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.add('hidden'), 3500);
 }
