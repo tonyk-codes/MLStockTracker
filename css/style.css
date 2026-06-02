@@ -4,16 +4,16 @@
    ================================================================ */
 
 :root {
-    --bg:          #080b10;
-    --bg-2:        #0d1117;
-    --bg-3:        #111821;
-    --border:      #1d2535;
-    --border-hi:   #2d3d55;
-    --text:        #c9d1d9;
-    --text-dim:    #7d8fa8;
-    --text-faint:  #4a5568;
-    --accent:      #58a6ff;
-    --accent-dim:  rgba(88,166,255,.12);
+    --bg:          #0a0a0a;
+    --bg-2:        #111111;
+    --bg-3:        #181818;
+    --border:      #1d2520;
+    --border-hi:   #2d3830;
+    --text:        #d0cfc8;
+    --text-dim:    #888070;
+    --text-faint:  #52504a;
+    --accent:      #d9860f;
+    --accent-dim:  rgba(217,134,15,.12);
     --buy:         #3fb950;
     --buy-dim:     rgba(63,185,80,.12);
     --sell:        #f85149;
@@ -538,7 +538,7 @@ input, select { font: inherit; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a4d6a; }
+::-webkit-scrollbar-thumb:hover { background: #3d3526; }
 
 /* ---- Responsive ---- */
 @media (max-width: 1024px) {
